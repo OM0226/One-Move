@@ -2,13 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>ONE MOVE</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+
   <style>
     * {
       -webkit-tap-highlight-color: transparent;
@@ -26,6 +24,36 @@
       width: 100%;
       height: 100%;
       background: #1e293b;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #splash {
+      position: fixed;
+      inset: 0;
+      background: #1e293b;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+    #splash.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #splash-title {
+      color: white;
+      font-size: 48px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      font-family: sans-serif;
+      margin-bottom: 8px;
+    }
+    #splash-sub {
+      color: #94a3b8;
+      font-size: 14px;
+      font-family: sans-serif;
+      letter-spacing: 2px;
     }
     #root {
       width: 100%;
@@ -42,6 +70,10 @@
     @keyframes fadeInUp {
       0% { opacity: 0; transform: translateY(20px); }
       100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes htpPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+      50% { box-shadow: 0 0 12px 4px rgba(99,102,241,0.6); }
     }
     @keyframes glowPulse {
       0%, 100% { box-shadow: 0 0 40px rgba(96,165,250,0.5), 0 0 80px rgba(59,130,246,0.3), 0 0 120px rgba(37,99,235,0.2); }
@@ -87,10 +119,33 @@
       animation: tapHereFloat 1.5s ease-in-out infinite;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     }
+    .safe-top {
+      top: calc(env(safe-area-inset-top) + 16px) !important;
+    }
   </style>
 </head>
 <body>
+<div id="splash">
+    <div id="splash-title">ONE MOVE</div>
+    <div id="splash-sub">Think Fast. Play Smart. One Move.</div>
+  </div>
   <div id="root"></div>
+  <script>
+    // Hide splash screen once React app has mounted
+    window.__hideSplash = function() {
+      var splash = document.getElementById('splash');
+      if (splash) {
+        splash.classList.add('hidden');
+        setTimeout(function() { splash.style.display = 'none'; }, 500);
+      }
+    };
+    // Fallback — hide after 2 seconds no matter what
+    setTimeout(window.__hideSplash, 2000);
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
   <script type="text/babel">
     const { useState, useEffect } = React;
 
@@ -2993,6 +3048,8 @@ const OneMove = () => {
   const [peekMode, setPeekMode] = useState(false); // waiting for player to select a card to peek
   const [showStreakCelebration, setShowStreakCelebration] = useState(false);
   const [deckPosition, setDeckPosition] = useState(0);
+  const puzzleDeckRef = React.useRef([]);
+  const deckPositionRef = React.useRef(0);
   const [triviaScore, setTriviaScore] = useState(0);
   const [puzzleScore, setPuzzleScore] = useState(0);
   const [processing, setProcessing] = useState(false);
@@ -3062,9 +3119,22 @@ const OneMove = () => {
   const [usedTrivia, setUsedTrivia] = useState([]);
   const [recentCategories, setRecentCategories] = useState([]);
   const [showInstructionPopup, setShowInstructionPopup] = useState(null);
+  // Shuffled deck system for trivia
+  const [triviaDeck, setTriviaDeck] = useState([]);
+  const [triviaDeckPos, setTriviaDeckPos] = useState(0);
+  // Shuffled deck system for word scramble
+  const [scrambleDeck, setScrambleDeck] = useState([]);
+  const [scrambleDeckPos, setScrambleDeckPos] = useState(0);
   const [username, setUsername] = useState('Player');
   const [showCorrectWord, setShowCorrectWord] = useState(false);
-  const [wsSubmitting, setWsSubmitting] = useState(false); // prevents double-submit
+  const wsSubmittingRef = React.useRef(false); // ref for immediate guard in handler
+  const [wsSubmittingState, setWsSubmittingState] = React.useState(false);
+  const setWsSubmitting = (val) => { wsSubmittingRef.current = val; setWsSubmittingState(val); };
+  const wsSubmitting = wsSubmittingRef.current;
+  const qmSubmittingRef = React.useRef(false); // ref prevents re-renders from resetting it
+  const setQmSubmitting = (val) => { qmSubmittingRef.current = val; };
+  const qmSubmitting = qmSubmittingRef.current;
+  const [emergencySkipUsed, setEmergencySkipUsed] = useState(false); // free skip when gems=0
   const [showWordWrong, setShowWordWrong] = useState(false);
   const [showTileFailure, setShowTileFailure] = useState(false);
   const [showTileSuccess, setShowTileSuccess] = useState(false);
@@ -3073,15 +3143,13 @@ const OneMove = () => {
   const [bonusGems, setBonusGems] = useState(0);
   const [lastAwardedLevel, setLastAwardedLevel] = useState('');
   
-  // Beta Tester Unlock System
-  const [aboutTapCount, setAboutTapCount] = useState(0);
-  const [showBetaUnlock, setShowBetaUnlock] = useState(false);
-  const [betaUnlockInput, setBetaUnlockInput] = useState('');
+
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const FREE_PUZZLE_LIMIT = 60;
   const [showUsernameEdit, setShowUsernameEdit] = useState(false);
   const [tempUsername, setTempUsername] = useState('');
+  const [sessionCount, setSessionCount] = useState(0); // tracks sessions for HTP pulse
   const [showLevelInfo, setShowLevelInfo] = useState(false);
   // Customization states
   const [selectedIcon, setSelectedIcon] = useState('default');
@@ -3094,7 +3162,76 @@ const OneMove = () => {
   const [customizeTab, setCustomizeTab] = useState('icons'); // 'icons', 'themes', 'titles'
 
   // Load/save progress
+  // StoreKit IAP listener — receives payment result from native Swift layer
   useEffect(() => {
+    const handleIAPSuccess = () => {
+      setIsPremiumUnlocked(true);
+      saveProgress({ isPremiumUnlocked: true });
+      // Also save directly to localStorage as immediate backup
+      try {
+        const existing = JSON.parse(localStorage.getItem('oneMoveSave_v4') || '{}');
+        existing.isPremiumUnlocked = true;
+        localStorage.setItem('oneMoveSave_v4', JSON.stringify(existing));
+        localStorage.setItem('omPremiumUnlocked', 'true');
+      } catch(e) {}
+      setShowPaywall(false);
+    };
+    const handleIAPFailed = () => {
+      alert('Purchase could not be completed. Please try again.');
+    };
+    const handleIAPRestore = () => {
+      setIsPremiumUnlocked(true);
+      saveProgress({ isPremiumUnlocked: true });
+      try {
+        const existing = JSON.parse(localStorage.getItem('oneMoveSave_v4') || '{}');
+        existing.isPremiumUnlocked = true;
+        localStorage.setItem('oneMoveSave_v4', JSON.stringify(existing));
+        localStorage.setItem('omPremiumUnlocked', 'true');
+      } catch(e) {}
+      setShowPaywall(false);
+      alert('Purchase restored successfully! Welcome back to ONE MOVE.');
+    };
+    window.addEventListener('iapSuccess', handleIAPSuccess);
+    window.addEventListener('iapFailed', handleIAPFailed);
+    window.addEventListener('iapRestore', handleIAPRestore);
+    return () => {
+      window.removeEventListener('iapSuccess', handleIAPSuccess);
+      window.removeEventListener('iapFailed', handleIAPFailed);
+      window.removeEventListener('iapRestore', handleIAPRestore);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Hide splash screen now that React has mounted
+    if (window.__hideSplash) window.__hideSplash();
+
+    // CRITICAL: Check premium unlock status FIRST before anything else
+    if (localStorage.getItem('omPremiumUnlocked') === 'true') {
+      setIsPremiumUnlocked(true);
+    }
+
+    // Poll for Swift UserDefaults purchase status via Capacitor
+    const premiumPoll = setInterval(() => {
+      if (localStorage.getItem('omPremiumUnlocked') === 'true') {
+        setIsPremiumUnlocked(true);
+        clearInterval(premiumPoll);
+      }
+      // Also check via webkit bridge
+      try {
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.checkPremium) {
+          window.webkit.messageHandlers.checkPremium.postMessage('');
+        }
+      } catch(e) {}
+    }, 2000);
+    // Stop polling after 30 seconds
+    setTimeout(() => clearInterval(premiumPoll), 30000);
+
+    // Increment session count each time app loads
+    setEmergencySkipUsed(false); // Reset emergency skip each session
+    const sc = parseInt(localStorage.getItem('omSessionCount') || '0') + 1;
+    localStorage.setItem('omSessionCount', String(sc));
+    setSessionCount(sc);
+
     const saved = localStorage.getItem('oneMoveSave_v4');
     if (saved) {
       const data = JSON.parse(saved);
@@ -3102,7 +3239,12 @@ const OneMove = () => {
       if (data.puzzleDeck && data.puzzleDeck.length === 4) {
         setPuzzleDeck(data.puzzleDeck);
         setDeckPosition(data.deckPosition || 0);
+        puzzleDeckRef.current = data.puzzleDeck;
+        deckPositionRef.current = data.deckPosition || 0;
       }
+      // Always load streaks regardless of deck state
+      if (data.correctStreak != null) setCorrectStreak(data.correctStreak);
+      if (data.playStreak) setPlayStreak(data.playStreak);
       setTriviaScore(data.triviaScore || 0);
       setPuzzleScore(data.puzzleScore || 0);
       setDailyChallengeGems(data.dailyChallengeGems || 0);
@@ -3116,6 +3258,11 @@ const OneMove = () => {
       setUsedPatterns(data.usedPatterns || []);
       setUsedTrivia(data.usedTrivia || []);
       setRecentCategories(data.recentCategories || []);
+      // Load shuffled decks
+      setTriviaDeck(data.triviaDeck || []);
+      setTriviaDeckPos(data.triviaDeckPos || 0);
+      setScrambleDeck(data.scrambleDeck || []);
+      setScrambleDeckPos(data.scrambleDeckPos || 0);
       
       // ONE-TIME MIGRATION: Award past level bonuses
       const currentIndex = data.currentIndex || 0;
@@ -3153,10 +3300,12 @@ const OneMove = () => {
           setLastAwardedLevel(achievedLevel);
           // Save immediately
           setTimeout(() => {
+            const premiumStatus = localStorage.getItem('omPremiumUnlocked') === 'true' || data.isPremiumUnlocked || false;
             localStorage.setItem('oneMoveSave_v4', JSON.stringify({
               ...data,
               bonusGems: retroactiveBonus,
-              lastAwardedLevel: achievedLevel
+              lastAwardedLevel: achievedLevel,
+              isPremiumUnlocked: premiumStatus
             }));
           }, 100);
         }
@@ -3178,7 +3327,7 @@ const OneMove = () => {
       setUnlockedTitles(data.unlockedTitles || []);
       
       // Load premium unlock status
-      setIsPremiumUnlocked(data.isPremiumUnlocked || false);
+      setIsPremiumUnlocked(data.isPremiumUnlocked || localStorage.getItem('omPremiumUnlocked') === 'true' || false);
     }
     
     // Load Daily Challenge status
@@ -3307,6 +3456,8 @@ const OneMove = () => {
     const timer = setTimeout(() => {
       setShowMathResult(null);
       setMathSelectedAnswer(null);
+      qmSubmittingRef.current = false;
+      setQmSubmitting(false);
       setPendingQMAdvance(null);
       if (index >= 100000) { setScreen('complete'); } else { handleNextPuzzle(index); }
     }, delay);
@@ -3324,6 +3475,11 @@ const OneMove = () => {
   }, [screen]);
 
   const saveProgress = (data) => {
+    // Always preserve premium unlock — check backup key too
+    const premiumStatus = data.isPremiumUnlocked !== undefined 
+      ? data.isPremiumUnlocked 
+      : (isPremiumUnlocked || localStorage.getItem('omPremiumUnlocked') === 'true');
+    
     localStorage.setItem('oneMoveSave_v4', JSON.stringify({
       currentIndex: currentPuzzleIndex,
       puzzleDeck,
@@ -3349,46 +3505,15 @@ const OneMove = () => {
       gemsSpentOnCustomization,
       gemsSpentOn5050,
       gemsSpentOnHints,
-      isPremiumUnlocked,
-      ...data
+      isPremiumUnlocked: premiumStatus,
+      correctStreak,
+      playStreak,
+      ...data,
+      // Always override with correct premium status
+      isPremiumUnlocked: premiumStatus
     }));
   };
 
-  // Beta Tester Unlock System
-  const BETA_CODE = 'ONEMOVE_BETA_TESTER';
-  const CODE_EXPIRATION = new Date('2026-04-15T23:59:59'); // April 15, 2026
-  
-  const validateBetaCode = (code) => {
-    const now = new Date();
-    
-    // Check if code has expired
-    if (now > CODE_EXPIRATION) {
-      return { success: false, message: 'Code expired. Please contact support.' };
-    }
-    
-    // Check if code matches
-    if (code.trim().toUpperCase() === BETA_CODE) {
-      setIsPremiumUnlocked(true);
-      saveProgress({ isPremiumUnlocked: true });
-      return { success: true, message: 'Premium unlocked! Thank you for beta testing! 💎' };
-    }
-    
-    return { success: false, message: 'Invalid code. Please check and try again.' };
-  };
-  
-  const handleAboutTap = () => {
-    setAboutTapCount(prev => {
-      const newCount = prev + 1;
-      if (newCount >= 5) {
-        setShowBetaUnlock(true);
-        return 0; // Reset counter
-      }
-      return newCount;
-    });
-    
-    // Reset tap counter after 2 seconds of no taps
-    setTimeout(() => setAboutTapCount(0), 2000);
-  };
 
   // Daily Challenge Functions
   const getTodayDateString = () => {
@@ -6749,6 +6874,18 @@ const OneMove = () => {
     return "Beginner";
   };
   
+  const getNextLevelInfo = () => {
+    const count = currentPuzzleIndex;
+    if (count < 76)   return { name: "Pattern Seeker", target: 76,   icon: "📜" };
+    if (count < 250)  return { name: "Logic Master",   target: 250,  icon: "🥉" };
+    if (count < 400)  return { name: "Mind Bender",    target: 400,  icon: "🥈" };
+    if (count < 700)  return { name: "Puzzle Architect", target: 700, icon: "🥇" };
+    if (count < 1000) return { name: "The Persistent", target: 1000, icon: "💚" };
+    if (count < 1500) return { name: "ONE MOVE Master", target: 1500, icon: "💎" };
+    if (count < 2000) return { name: "Ultimate Champion", target: 2000, icon: "👑" };
+    return null; // max level
+  };
+
   const getThemeColors = () => {
     const theme = SHOP_THEMES.find(t => t.id === selectedTheme) || SHOP_THEMES[0];
     return `bg-gradient-to-br from-${theme.colors.from} via-${theme.colors.via} to-${theme.colors.to}`;
@@ -6856,28 +6993,38 @@ const OneMove = () => {
   };
 
   const generateWordScramble = () => {
-    // Pick random word from scramble bank (5+ letters only), avoiding recently used words
-    let scrambleItem;
-    let attempts = 0;
-    do {
-      scrambleItem = SCRAMBLE_BANK[Math.floor(Math.random() * SCRAMBLE_BANK.length)];
-      attempts++;
-    } while ((usedWords.includes(scrambleItem.word) || scrambleItem.word.replace(/\s/g, '').length < 5) && attempts < 100);
-    
-    // Add word to used list and maintain 500-word buffer
-    const newUsedWords = [...usedWords, scrambleItem.word];
-    if (newUsedWords.length > 500) {
-      newUsedWords.shift(); // Remove oldest word
+    // SHUFFLED DECK SYSTEM — play every word once before any repeats
+    // Filter bank to 5+ letter words only
+    const validBank = SCRAMBLE_BANK.map((item, i) => ({item, i}))
+      .filter(({item}) => item.word.replace(/\s/g, '').length >= 5);
+
+    let deck = scrambleDeck;
+    let pos = scrambleDeckPos;
+
+    // Build or rebuild deck if empty or exhausted
+    if (deck.length === 0 || pos >= deck.length) {
+      const indices = validBank.map(({i}) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      deck = indices;
+      pos = 0;
     }
-    setUsedWords(newUsedWords);
-    saveProgress({ usedWords: newUsedWords });
-    
+
+    const scrambleItem = SCRAMBLE_BANK[deck[pos]];
+    const newPos = pos + 1;
+
+    // Save deck and position
+    setScrambleDeck(deck);
+    setScrambleDeckPos(newPos);
+    saveProgress({ scrambleDeck: deck, scrambleDeckPos: newPos });
+
     const word = scrambleItem.word;
-    
+
     // Handle multi-word phrases by scrambling each word separately and joining with underscore
     let scrambledText;
     if (word.includes(' ')) {
-      // Multi-word: scramble each word separately, join with underscore
       const words = word.split(' ');
       const scrambledWords = words.map(w => {
         const letters = w.split('');
@@ -6889,7 +7036,6 @@ const OneMove = () => {
       });
       scrambledText = scrambledWords.join(' _ ');
     } else {
-      // Single word: scramble normally
       const letters = word.split('');
       for (let i = letters.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -6897,7 +7043,7 @@ const OneMove = () => {
       }
       scrambledText = letters.join('');
     }
-    
+
     return {
       type: PUZZLE_TYPES.WORD_SCRAMBLE,
       scrambled: scrambledText,
@@ -7196,10 +7342,10 @@ const OneMove = () => {
     {question: 'Which is the next perfect square after 169?', answer: '196', choices: ['180', '184', '196', '225']},
   ];
 
-  const generateQuickMath = (isDaily = false) => {
+  const generateQuickMath = (isDaily = false, explicitIndex = null) => {
     // Difficulty based on puzzle index OR if it's Daily Challenge
     let num1, num2, operation, answer, choices;
-    const lastQMAnswer = localStorage.getItem('lastQMAnswer');
+    // lastQMAnswer removed — repeat prevention caused answer corruption
     
     // DAILY CHALLENGE: Always use HARD difficulty
     if (isDaily) {
@@ -7234,24 +7380,19 @@ const OneMove = () => {
       const useWritten = Math.random() < 0.30;
 
       if (useWritten) {
-        // Pull from written pool with 50-question buffer
+        // Pull from written pool with 100-question repeat-prevention buffer
         const usedWrittenRaw = localStorage.getItem('usedRegularMath');
         const usedWritten = usedWrittenRaw ? JSON.parse(usedWrittenRaw) : [];
         
         // Filter out recently used questions
-        const available = QUICK_MATH_WRITTEN_POOL.filter((_, idx) => !usedWritten.includes(idx));
-        const pool = available.length > 0 ? available : QUICK_MATH_WRITTEN_POOL;
+        const available = QUICK_MATH_WRITTEN_POOL.map((_, idx) => idx).filter(idx => !usedWritten.includes(idx));
+        const pool = available.length > 0 ? available : QUICK_MATH_WRITTEN_POOL.map((_, i) => i);
         
-        // Pick a random question from available pool
-        const allIndices = pool === QUICK_MATH_WRITTEN_POOL 
-          ? QUICK_MATH_WRITTEN_POOL.map((_, i) => i)
-          : QUICK_MATH_WRITTEN_POOL.map((_, i) => i).filter(i => !usedWritten.includes(i));
-        
-        const randomIndex = allIndices[Math.floor(Math.random() * allIndices.length)];
+        const randomIndex = pool[Math.floor(Math.random() * pool.length)];
         const selected = QUICK_MATH_WRITTEN_POOL[randomIndex];
         
-        // Update buffer (keep last 50)
-        const newUsed = [...usedWritten, randomIndex].slice(-50);
+        // Update buffer (keep last 100)
+        const newUsed = [...usedWritten, randomIndex].slice(-100);
         localStorage.setItem('usedRegularMath', JSON.stringify(newUsed));
         
         // Shuffle choices
@@ -7269,72 +7410,152 @@ const OneMove = () => {
         };
       }
 
-      // Procedural fast-calc (70%) — scaled difficulty
-      if (currentPuzzleIndex < 50) {
-        // Easy: Addition & Subtraction (single digit)
+      // Procedural fast-calc (70%) — 4 difficulty tiers
+      let questionText;
+      const puzzleIdx = explicitIndex !== null ? explicitIndex : currentPuzzleIndex;
+
+      if (puzzleIdx < 15) {
+        // ── TIER 1: Starter (puzzles 0-14) ──
+        // Two-digit addition & subtraction — no single digit answers
         operation = Math.random() < 0.5 ? '+' : '-';
-        num1 = Math.floor(Math.random() * 10) + 1;
-        num2 = Math.floor(Math.random() * 10) + 1;
+        num1 = Math.floor(Math.random() * 40) + 15;  // 15-54
+        num2 = Math.floor(Math.random() * 20) + 8;   // 8-27
         if (operation === '-' && num2 > num1) [num1, num2] = [num2, num1];
         answer = operation === '+' ? num1 + num2 : num1 - num2;
-      } else if (currentPuzzleIndex < 150) {
-        // Medium: Multiplication & Division (tables up to 10)
-        operation = Math.random() < 0.5 ? '×' : '÷';
-        if (operation === '×') {
-          num1 = Math.floor(Math.random() * 10) + 1;
-          num2 = Math.floor(Math.random() * 10) + 1;
+        if (answer < 5) answer = num1 + num2; // fallback to addition if subtraction too small
+        questionText = `${num1} ${operation} ${num2} = ?`;
+
+      } else if (puzzleIdx < 75) {
+        // ── TIER 2: Medium (puzzles 15-74) ──
+        // Multiplication tables up to 15, division, mixed two-digit ops
+        const pick = Math.random();
+        if (pick < 0.35) {
+          // Multiplication up to 15×15
+          operation = '×';
+          num1 = Math.floor(Math.random() * 14) + 2;  // 2-15
+          num2 = Math.floor(Math.random() * 14) + 2;
           answer = num1 * num2;
-        } else {
-          answer = Math.floor(Math.random() * 10) + 1;
-          num2 = Math.floor(Math.random() * 10) + 1;
+          questionText = `${num1} ${operation} ${num2} = ?`;
+        } else if (pick < 0.6) {
+          // Clean division
+          operation = '÷';
+          answer = Math.floor(Math.random() * 12) + 2;  // 2-13
+          num2 = Math.floor(Math.random() * 11) + 2;    // 2-12
           num1 = answer * num2;
+          questionText = `${num1} ${operation} ${num2} = ?`;
+        } else {
+          // Two/three digit addition or subtraction
+          operation = Math.random() < 0.5 ? '+' : '-';
+          num1 = Math.floor(Math.random() * 90) + 20;  // 20-109
+          num2 = Math.floor(Math.random() * 60) + 10;  // 10-69
+          if (operation === '-' && num2 > num1) [num1, num2] = [num2, num1];
+          answer = operation === '+' ? num1 + num2 : num1 - num2;
+          questionText = `${num1} ${operation} ${num2} = ?`;
         }
+
+      } else if (puzzleIdx < 200) {
+        // ── TIER 3: Hard (puzzles 75-199) ──
+        // Order of operations, percentages, larger multiplication
+        const pick = Math.random();
+        if (pick < 0.25) {
+          // Order of operations: a + b × c
+          const a = Math.floor(Math.random() * 20) + 2;
+          const b = Math.floor(Math.random() * 10) + 2;
+          const c = Math.floor(Math.random() * 10) + 2;
+          answer = a + (b * c);
+          questionText = `${a} + ${b} × ${c} = ?`;
+          operation = '+'; num1 = a; num2 = b;
+        } else if (pick < 0.5) {
+          // Percentage: What is X% of Y?
+          const pct = [5, 10, 15, 20, 25, 30, 40, 50][Math.floor(Math.random() * 8)];
+          const base = [20, 40, 50, 60, 80, 100, 120, 150, 200][Math.floor(Math.random() * 9)];
+          answer = Math.round(pct / 100 * base);
+          questionText = `What is ${pct}% of ${base}?`;
+          operation = '%'; num1 = pct; num2 = base;
+        } else if (pick < 0.75) {
+          // Large multiplication: 2-digit × 1-digit
+          operation = '×';
+          num1 = Math.floor(Math.random() * 60) + 15;  // 15-74
+          num2 = Math.floor(Math.random() * 8) + 3;    // 3-10
+          answer = num1 * num2;
+          questionText = `${num1} ${operation} ${num2} = ?`;
+        } else {
+          // Mixed: (a × b) + c
+          const a = Math.floor(Math.random() * 9) + 2;
+          const b = Math.floor(Math.random() * 9) + 2;
+          const c = Math.floor(Math.random() * 30) + 5;
+          answer = (a * b) + c;
+          questionText = `(${a} × ${b}) + ${c} = ?`;
+          operation = '×'; num1 = a; num2 = b;
+        }
+
       } else {
-        // Hard: Mixed operations, larger numbers
-        const ops = ['+', '-', '×', '÷'];
-        operation = ops[Math.floor(Math.random() * ops.length)];
-        if (operation === '+') {
-          num1 = Math.floor(Math.random() * 50) + 10;
-          num2 = Math.floor(Math.random() * 50) + 10;
-          answer = num1 + num2;
-        } else if (operation === '-') {
-          num1 = Math.floor(Math.random() * 80) + 20;
-          num2 = Math.floor(Math.random() * (num1 - 10)) + 1;
-          answer = num1 - num2;
-        } else if (operation === '×') {
-          num1 = Math.floor(Math.random() * 12) + 2;
-          num2 = Math.floor(Math.random() * 12) + 2;
-          answer = num1 * num2;
+        // ── TIER 4: Challenging (puzzles 200+) ──
+        // Algebra, multi-step, exponents, larger percentages
+        const pick = Math.random();
+        if (pick < 0.25) {
+          // Simple algebra: ax + b = c, solve for x
+          const a = Math.floor(Math.random() * 8) + 2;   // coefficient 2-9
+          const x = Math.floor(Math.random() * 15) + 2;  // solution 2-16
+          const b = Math.floor(Math.random() * 20) + 1;
+          const c = (a * x) + b;
+          answer = x;
+          questionText = `${a}x + ${b} = ${c}, x = ?`;
+          operation = 'x'; num1 = a; num2 = b;
+        } else if (pick < 0.5) {
+          // Percentage: harder bases
+          const pct = [12, 15, 18, 22, 35, 45, 60, 75][Math.floor(Math.random() * 8)];
+          const base = [80, 120, 160, 200, 240, 300, 400, 500][Math.floor(Math.random() * 8)];
+          answer = Math.round(pct / 100 * base);
+          questionText = `What is ${pct}% of ${base}?`;
+          operation = '%'; num1 = pct; num2 = base;
+        } else if (pick < 0.75) {
+          // Order of operations: a × b - c × d
+          const a = Math.floor(Math.random() * 9) + 2;
+          const b = Math.floor(Math.random() * 9) + 2;
+          const c = Math.floor(Math.random() * 6) + 2;
+          const d = Math.floor(Math.random() * 6) + 2;
+          answer = (a * b) - (c * d);
+          if (answer <= 0) { answer = (a * b) + (c * d); questionText = `${a} × ${b} + ${c} × ${d} = ?`; }
+          else { questionText = `${a} × ${b} − ${c} × ${d} = ?`; }
+          operation = '×'; num1 = a; num2 = b;
         } else {
-          answer = Math.floor(Math.random() * 15) + 2;
-          num2 = Math.floor(Math.random() * 12) + 2;
-          num1 = answer * num2;
+          // Squares: what is N²?
+          num1 = Math.floor(Math.random() * 12) + 4;  // 4-15
+          answer = num1 * num1;
+          questionText = `${num1}² = ?`;
+          operation = '²'; num2 = num1;
         }
       }
 
-      // Repeat prevention: if same answer as last QM, nudge it
-      if (!isDaily && String(answer) === lastQMAnswer) {
-        answer = answer + (Math.random() > 0.5 ? 2 : -2);
-        if (answer <= 0) answer = Math.abs(answer) + 1;
+      // Build 3 wrong answers then inject correct answer at random position
+      // Note: repeat prevention removed — nudging answer corrupted question/answer mismatch
+      const wrongSet = new Set();
+      const spread = answer > 200 ? 25 : answer > 50 ? 12 : answer > 20 ? 6 : 4;
+      let att = 0;
+      while (wrongSet.size < 3 && att < 300) {
+        att++;
+        const offset = Math.floor(Math.random() * (spread * 2 + 1)) - spread;
+        if (offset === 0) continue;
+        const wrong = answer + offset;
+        if (wrong > 0 && wrong !== answer) wrongSet.add(wrong);
       }
+      // Fallback: guarantee 3 wrong answers using sequential offsets
+      let seq = 1;
+      while (wrongSet.size < 3) {
+        if (answer + seq !== answer) wrongSet.add(answer + seq);
+        seq++;
+        if (wrongSet.size < 3 && answer + seq + 1 !== answer) wrongSet.add(answer + seq + 1);
+        seq++;
+      }
+      // Build choices array with correct answer injected at random position
+      const wrongArr = Array.from(wrongSet).slice(0, 3);
+      const insertPos = Math.floor(Math.random() * 4);
+      choices = [...wrongArr.slice(0, insertPos), answer, ...wrongArr.slice(insertPos)];
 
-      // Generate 3 wrong answers for procedural questions
-      choices = [answer];
-      while (choices.length < 4) {
-        let wrong = answer + Math.floor(Math.random() * 20) - 10;
-        if (wrong > 0 && !choices.includes(wrong)) {
-          choices.push(wrong);
-        }
-      }
-      // Shuffle
-      for (let i = choices.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [choices[i], choices[j]] = [choices[j], choices[i]];
-      }
-      
       return {
         type: PUZZLE_TYPES.QUICK_MATH,
-        question: `${num1} ${operation} ${num2} = ?`,
+        question: questionText || `${num1} ${operation} ${num2} = ?`,
         answer: answer.toString(),
         choices: choices.map(c => c.toString())
       };
@@ -7416,59 +7637,43 @@ const OneMove = () => {
     setFiftyFiftyUsed(true);
   };
   const handleCategorySelect = (category) => {
-    // LAYER 1 - Category rotation: don't repeat a category until 5 others have been used
-    const allCategories = Object.values(CATEGORIES);
-    let selectedCategory = category;
-    
-    // If this category was used too recently, pick a fresher one
-    if (recentCategories.slice(-5).includes(category)) {
-      const freshCategories = allCategories.filter(c => !recentCategories.slice(-5).includes(c));
-      if (freshCategories.length > 0) {
-        selectedCategory = freshCategories[Math.floor(Math.random() * freshCategories.length)];
+    setWsSubmitting(false); // Always clear on any puzzle transition
+
+    // SHUFFLED DECK SYSTEM — play every question once before any repeats
+    let deck = triviaDeck;
+    let pos = triviaDeckPos;
+
+    // Build or rebuild deck if empty or exhausted
+    if (deck.length === 0 || pos >= deck.length) {
+      // Shuffle all indices
+      const indices = TRIVIA_BANK.map((_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
       }
+      deck = indices;
+      pos = 0;
     }
-    
-    // Update category rotation buffer (keep last 5)
-    const newRecentCategories = [...recentCategories, selectedCategory];
-    if (newRecentCategories.length > 5) newRecentCategories.shift();
-    setRecentCategories(newRecentCategories);
-    
-    // LAYER 2 - Per-category deduplication with full-reset when exhausted
-    const categoryQuestions = TRIVIA_BANK.filter(q => q.cat === selectedCategory);
-    
-    // Filter out already-used questions in this category
-    let available = categoryQuestions.filter(q => !usedTrivia.includes(q.q));
-    
-    // If category exhausted, reset just that category's questions from the buffer
-    if (available.length === 0) {
-      const otherCatUsed = usedTrivia.filter(qText => {
-        const match = TRIVIA_BANK.find(q => q.q === qText);
-        return match && match.cat !== selectedCategory;
-      });
-      const newUsedTrivia = otherCatUsed;
-      setUsedTrivia(newUsedTrivia);
-      saveProgress({ usedTrivia: newUsedTrivia, recentCategories: newRecentCategories });
-      available = categoryQuestions;
-    }
-    
-    // Pick random unused question
-    const question = available[Math.floor(Math.random() * available.length)];
-    
-    // Add to global buffer (cap at 1000 to cover all questions)
-    const newUsedTrivia = [...usedTrivia, question.q];
-    if (newUsedTrivia.length > 1000) {
-      newUsedTrivia.shift();
-    }
-    setUsedTrivia(newUsedTrivia);
-    saveProgress({ usedTrivia: newUsedTrivia, recentCategories: newRecentCategories });
-    
+
+    // Pick next question from deck
+    const question = TRIVIA_BANK[deck[pos]];
+    const newPos = pos + 1;
+
+    // Save deck and position to state and localStorage
+    setTriviaDeck(deck);
+    setTriviaDeckPos(newPos);
+    saveProgress({ triviaDeck: deck, triviaDeckPos: newPos });
+
+    // Category label comes from the question itself
+    const selectedCategory = question.cat;
+    setSelectedCategory(selectedCategory);
+
     const choices = [...question.c];
     for (let i = choices.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [choices[i], choices[j]] = [choices[j], choices[i]];
     }
-    
-    setSelectedCategory(selectedCategory);
+
     setCurrentTriviaQuestion(question);
     setFiftyFiftyUsed(false);
     setEliminatedAnswers([]);
@@ -7483,6 +7688,7 @@ const OneMove = () => {
   const handleCorrectStreak = () => {
     const newStreak = correctStreak + 1;
     setCorrectStreak(newStreak);
+    saveProgress({ correctStreak: newStreak });
     if (newStreak > 0 && newStreak % 3 === 0) {
       setShowStreakCelebration(newStreak);
       setTimeout(() => setShowStreakCelebration(false), 2500);
@@ -7501,6 +7707,7 @@ const OneMove = () => {
       setTimeout(() => setShowStreakRestoreOffer(false), 6000);
     }
     setCorrectStreak(0);
+    saveProgress({ correctStreak: 0 });
   };
 
   // Shuffle helper
@@ -7513,7 +7720,7 @@ const OneMove = () => {
     return a;
   };
 
-  const launchPuzzleType = (puzzleType) => {
+  const launchPuzzleType = (puzzleType, nextIndex) => {
     // Show Daily Challenge nudge after puzzle 10 (once only)
     if (currentPuzzleIndex === 10 && !dailyChallengeAttempted && !isDailyChallenge) {
       setShowDailyChallengeNudge(true);
@@ -7535,11 +7742,16 @@ const OneMove = () => {
       setHintLevel(0);
       setScreen('puzzle_word');
     } else if (puzzleType === PUZZLE_TYPES.QUICK_MATH) {
-      const puzzle = generateQuickMath();
-      localStorage.setItem('lastQMAnswer', String(puzzle.answer));
+      const puzzle = generateQuickMath(false, nextIndex);
       setCurrentPuzzle(puzzle);
       setMathAnswer('');
       setHintLevel(0);
+      setPuzzleFreezeUsed(false);
+      setFailCount(0);
+      setPuzzleFirstAttempt(true);
+      setShowMathResult(null);
+      qmSubmittingRef.current = false;
+      setQmSubmitting(false);
       setScreen('puzzle_math');
     } else if (puzzleType === PUZZLE_TYPES.MEMORY_MATCH) {
       const puzzle = generateMemoryMatch();
@@ -7574,6 +7786,15 @@ const OneMove = () => {
   };
 
   const handleNextPuzzle = (nextIndex) => {
+    // Trigger in-app review prompt at puzzle 10 and every 20 puzzles after
+    if (nextIndex === 10 || (nextIndex > 10 && nextIndex % 20 === 0)) {
+      try {
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.requestReview) {
+          window.webkit.messageHandlers.requestReview.postMessage('');
+        }
+      } catch(e) {}
+    }
+
     if (nextIndex % 5 === 4) {
       // Every 5th puzzle → Trivia bonus round
       const categories = Object.values(CATEGORIES);
@@ -7582,17 +7803,15 @@ const OneMove = () => {
       return;
     }
 
-    // Shuffled deck: 4 puzzle types, each appears exactly once per cycle
-    // When deck is empty, deal a fresh shuffled deck
+    // Always read from refs to avoid stale closure issues
     const allTypes = [PUZZLE_TYPES.TILE_FLIP, PUZZLE_TYPES.WORD_SCRAMBLE, PUZZLE_TYPES.QUICK_MATH, PUZZLE_TYPES.MEMORY_MATCH];
-    let currentDeck = puzzleDeck.length === 4 ? puzzleDeck : shuffleArray(allTypes);
-    let currentPos = puzzleDeck.length === 4 ? deckPosition : 0;
+    let currentDeck = puzzleDeckRef.current.length === 4 ? puzzleDeckRef.current : shuffleArray(allTypes);
+    let currentPos = puzzleDeckRef.current.length === 4 ? deckPositionRef.current : 0;
 
     if (currentPos >= 4) {
       // Deck exhausted — shuffle a new one, avoid starting with same type as last card
       const lastType = currentDeck[3];
       let newDeck = shuffleArray(allTypes);
-      // If new deck starts with same type as last played, rotate it
       if (newDeck[0] === lastType) {
         newDeck = [...newDeck.slice(1), newDeck[0]];
       }
@@ -7603,11 +7822,15 @@ const OneMove = () => {
     const puzzleType = currentDeck[currentPos];
     const newPos = currentPos + 1;
 
+    // Update both state and refs atomically
     setPuzzleDeck(currentDeck);
     setDeckPosition(newPos);
+    puzzleDeckRef.current = currentDeck;
+    deckPositionRef.current = newPos;
     saveProgress({ puzzleDeck: currentDeck, deckPosition: newPos });
 
-    launchPuzzleType(puzzleType);
+    setWsSubmitting(false); // Always clear on puzzle advance
+    launchPuzzleType(puzzleType, nextIndex);
   };
 
   const handleAnswerSelect = (answer) => {
@@ -7687,7 +7910,7 @@ const OneMove = () => {
   };
 
   
-const handleDailyChallengeSuccess = () => {
+const handleDailyChallengeSuccess = (currentCorrectStreak) => {
   // Award 500 gems ONLY if not already awarded today
   if (!dailyChallengeGemsAwarded) {
     const newDCGems = dailyChallengeGems + 500;
@@ -7696,21 +7919,22 @@ const handleDailyChallengeSuccess = () => {
     saveProgress({ dailyChallengeGems: newDCGems });
   }
   
-  // Update streak
+  // Update DC streak
   const dcData = getDailyChallengeData();
   const newStreak = dcData ? (dcData.streak || 0) + 1 : 1;
   setDailyChallengeStreak(newStreak);
-  // Save last known streak value for DC Streak Restore
   localStorage.setItem('dcLastStreak', String(newStreak));
   const newTotalDays = totalDcDaysCompleted + 1;
   setTotalDcDaysCompleted(newTotalDays);
   
-  // Save completion with gems awarded flag - clear inProgress
+  // Save completion — explicitly pass correctStreak to prevent it being wiped
   saveDailyChallengeData(true, false, newStreak, true, dailyChallengeReplayed, false, null);
   setDailyChallengeCompleted(true);
   setDailyChallengeInProgress(false);
   setSavedDailyChallengeState(null);
   setIsDailyChallenge(false);
+  // Pass correctStreak explicitly since this function is outside React scope
+  saveProgress({ correctStreak: currentCorrectStreak });
   
   // Show result screen
   setTimeout(() => {
@@ -7760,6 +7984,9 @@ const handleDailyChallengeReplay = () => {
     if (processing) return;
     setProcessing(true);
     
+    // Safety: auto-release processing after 5 seconds in case something goes wrong
+    const processingTimeout = setTimeout(() => setProcessing(false), 5000);
+    
     const newGrid = grid.map(r => [...r]);
     applyFlipPattern(row, col, newGrid, currentPuzzle.pattern);
     
@@ -7767,7 +7994,10 @@ const handleDailyChallengeReplay = () => {
     setGrid(newGrid);
     
     await new Promise(resolve => setTimeout(resolve, 800));
-    const isSolved = newGrid.every(row => row.every(tile => tile === 1));
+    clearTimeout(processingTimeout); // Clear safety timeout since we got here
+    const allOnes = newGrid.every(row => row.every(tile => tile === 1));
+    const allZeros = newGrid.every(row => row.every(tile => tile === 0));
+    const isSolved = allOnes || allZeros;
     
     if (isSolved) {
       playSound('success');
@@ -7808,8 +8038,9 @@ const handleDailyChallengeReplay = () => {
       
       // Show CORRECT message
       setShowTileSuccess(true);
+      setProcessing(false); // Release lock so advance can fire
       
-      // Show success message then advance to next trivia
+      // Show success message then advance to next puzzle
       const tfCorrectIndex = currentPuzzleIndex + 1;
       setCurrentPuzzleIndex(tfCorrectIndex);
       saveProgress({ currentIndex: tfCorrectIndex });
@@ -7848,12 +8079,14 @@ const handleDailyChallengeReplay = () => {
       }
       burnDoublerUse();
       setShowTileFailure(true); // Show big failure message
+      setProcessing(false); // Release lock so advance can fire
       
       const tfWrongIndex = currentPuzzleIndex + 1;
       setCurrentPuzzleIndex(tfWrongIndex);
       saveProgress({ currentIndex: tfWrongIndex });
       setTimeout(() => checkLevelUp(), 100);
-      setPendingTFAdvance({ index: tfWrongIndex, delay: 3500 });
+      // Delay slightly to ensure state updates before advance fires
+      setTimeout(() => setPendingTFAdvance({ index: tfWrongIndex, delay: 3000 }), 100);
     }
   };
 
@@ -7915,7 +8148,7 @@ const handleDailyChallengeReplay = () => {
         
         // Check if this is Daily Challenge AFTER showing success
         if (isDailyChallenge) {
-          handleDailyChallengeSuccess();
+          handleDailyChallengeSuccess(correctStreak);
           return;
         }
         
@@ -7999,13 +8232,16 @@ const handleDailyChallengeReplay = () => {
       });
       setTileLetters(resetTiles);
       setPlacedTiles(newPlaced);
+      // Always clear submit lock after hint places tiles — player is mid-puzzle not submitting
+      wsSubmittingRef.current = false;
+      setWsSubmittingState(false);
     }
   }, [hintLevel]);
 
   const handleHint1 = () => {
     const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
     if (totalGems < 50 || hintLevel >= 1) return;
-    
+    setWsSubmitting(false); // Clear any stale submit lock when using a hint
     const newGemsSpent = gemsSpent + 50;
     setGemsSpent(newGemsSpent);
     const newHintsSpent = gemsSpentOnHints + 50;
@@ -8025,7 +8261,7 @@ const handleDailyChallengeReplay = () => {
   const handleHint2 = () => {
     const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
     if (totalGems < 100 || hintLevel < 1 || hintLevel >= 2) return;
-    
+    setWsSubmitting(false); // Clear any stale submit lock when using a hint
     const newGemsSpent = gemsSpent + 100;
     setGemsSpent(newGemsSpent);
     setHintLevel(2);
@@ -8037,7 +8273,7 @@ const handleDailyChallengeReplay = () => {
   const handleHint3 = () => {
     const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
     if (totalGems < 150 || hintLevel < 2 || hintLevel >= 3) return;
-    
+    setWsSubmitting(false); // Clear any stale submit lock when using a hint
     const newGemsSpent = gemsSpent + 150;
     setGemsSpent(newGemsSpent);
     setHintLevel(3);
@@ -8049,7 +8285,7 @@ const handleDailyChallengeReplay = () => {
   const handleHint4 = () => {
     const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
     if (totalGems < 200 || hintLevel < 3 || hintLevel >= 4) return;
-    
+    setWsSubmitting(false); // Clear any stale submit lock when using a hint
     const newGemsSpent = gemsSpent + 200;
     setGemsSpent(newGemsSpent);
     setHintLevel(4);
@@ -8063,6 +8299,15 @@ const handleDailyChallengeReplay = () => {
     if (!isPremiumUnlocked && currentPuzzleIndex >= FREE_PUZZLE_LIMIT) {
       setShowPaywall(true);
       return;
+    }
+    // Safety: ensure deck refs are initialized before playing
+    if (!puzzleDeckRef.current || puzzleDeckRef.current.length === 0) {
+      const allTypes = [PUZZLE_TYPES.TILE_FLIP, PUZZLE_TYPES.WORD_SCRAMBLE, PUZZLE_TYPES.QUICK_MATH, PUZZLE_TYPES.MEMORY_MATCH];
+      const freshDeck = shuffleArray(allTypes);
+      puzzleDeckRef.current = freshDeck;
+      deckPositionRef.current = 0;
+      setPuzzleDeck(freshDeck);
+      setDeckPosition(0);
     }
     handleNextPuzzle(currentPuzzleIndex);
   };
@@ -8082,6 +8327,14 @@ const handleDailyChallengeReplay = () => {
   };
 
   const handleSkipPuzzle = () => {
+    setWsSubmitting(false); // Reset WS
+    qmSubmittingRef.current = false;
+    setQmSubmitting(false); // Reset QM
+    setProcessing(false);   // Reset TF
+    setPendingTFAdvance(null);
+    setPendingWSAdvance(null);
+    setPendingQMAdvance(null);
+    setPendingMFAdvance(null);
     const skipCost = 200;
     const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
     
@@ -8666,8 +8919,8 @@ const handleDailyChallengeReplay = () => {
         
         {/* Power-Ups Modal */}
         {showPowerUps && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setShowPowerUps(false)}>
-            <div className="bg-slate-800 rounded-2xl px-5 py-6 max-w-sm w-full border-2 border-amber-500 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200] p-4" onClick={() => setShowPowerUps(false)}>
+            <div className="bg-slate-800 rounded-2xl px-5 py-6 max-w-sm w-full border-2 border-amber-500 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
               <h2 className="text-2xl font-bold text-white text-center mb-1">⚡ Power-Ups</h2>
               <p className="text-slate-400 text-xs text-center mb-5">Spend gems to get an edge</p>
 
@@ -9048,7 +9301,7 @@ const handleDailyChallengeReplay = () => {
         
         {/* TOP BAR */}
         {!showGemsAndRewards && (
-        <div className="sticky top-0 left-0 right-0 flex items-center justify-between px-4 py-3 z-50 bg-gradient-to-b from-slate-900/80 to-transparent backdrop-blur-sm">
+        <div className="sticky top-0 left-0 right-0 flex items-center justify-between px-4 py-3 z-[100] bg-gradient-to-b from-slate-900/80 to-transparent backdrop-blur-sm" style={{paddingTop: 'calc(env(safe-area-inset-top) + 12px)'}}>
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setScreen('home')}
@@ -9057,7 +9310,7 @@ const handleDailyChallengeReplay = () => {
               <Home className="w-6 h-6 text-white" />
             </button>
             <button 
-              onClick={() => setShowUsernameEdit(true)}
+              onClick={() => { setShowUsernameEdit(true); setTempUsername(username); }}
               className="bg-slate-800/80 px-4 py-3 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700/80 transition-all duration-300"
             >
               <div className="flex items-center gap-2">
@@ -9089,7 +9342,7 @@ const handleDailyChallengeReplay = () => {
                     type="text"
                     value={tempUsername}
                     onChange={(e) => setTempUsername(e.target.value)}
-                    placeholder={username}
+                    placeholder="Enter new username"
                     maxLength={20}
                     className="flex-1 px-3 py-2.5 bg-slate-900 text-white rounded-lg border-2 border-slate-700 focus:border-blue-500 outline-none text-center text-base"
                   />
@@ -9555,6 +9808,36 @@ const handleDailyChallengeReplay = () => {
               </div>
             </div>
 
+            {/* Level Progress Bar */}
+            {(() => {
+              const next = getNextLevelInfo();
+              const currentLevel = getUserLevel();
+              if (!next) return (
+                <div className="bg-slate-800/60 rounded-xl p-3 border border-amber-500/30 text-center">
+                  <p className="text-amber-400 font-bold text-sm">👑 Ultimate Champion — Max Level!</p>
+                </div>
+              );
+              const prevTarget = getLevelInfo(currentLevel).threshold;
+              const progress = Math.min(100, Math.round(((currentPuzzleIndex - prevTarget) / (next.target - prevTarget)) * 100));
+              return (
+                <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/50">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-slate-400 text-xs">{getLevelInfo(currentLevel).icon} {currentLevel}</span>
+                    <span className="text-slate-400 text-xs">{next.icon} {next.name}</span>
+                  </div>
+                  <div className="w-full bg-slate-700 rounded-full h-2 mb-1.5">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full transition-all duration-500"
+                      style={{width: `${progress}%`}}
+                    />
+                  </div>
+                  <p className="text-center text-xs text-slate-400">
+                    <span className="text-white font-semibold">{next.target - currentPuzzleIndex}</span> puzzles to {next.name}
+                  </p>
+                </div>
+              );
+            })()}
+
             <button
               onClick={handlePlay}
               className="w-full px-12 py-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300 flex items-center justify-center gap-3 text-xl font-light tracking-wide shadow-lg"
@@ -9568,9 +9851,15 @@ const handleDailyChallengeReplay = () => {
             
             <button
               onClick={() => setScreen('instructions')}
-              className="w-full px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all duration-300 text-sm font-light tracking-wide"
+              className="w-full px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all duration-300 text-sm font-light tracking-wide relative"
+              style={sessionCount <= 5 ? {animation: 'htpPulse 2s ease-in-out infinite'} : {}}
             >
               HOW TO PLAY
+              {sessionCount <= 5 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-indigo-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">
+                  START HERE
+                </span>
+              )}
             </button>
             
             <button
@@ -9614,7 +9903,7 @@ const handleDailyChallengeReplay = () => {
                   <span className="text-green-400">✓</span> All 5 puzzle types, all difficulty levels
                 </div>
                 <div className="flex items-center gap-2 text-sm text-slate-200">
-                  <span className="text-green-400">✓</span> Superstars leaderboard
+                  <span className="text-green-400">✓</span> 38 customizable profile items
                 </div>
                 <div className="flex items-center gap-2 text-sm text-slate-200">
                   <span className="text-green-400">✓</span> Full gem economy & rewards
@@ -9626,9 +9915,30 @@ const handleDailyChallengeReplay = () => {
 
               <button
                 onClick={() => {
-                  // TODO: wire to StoreKit IAP in native build
-                  alert('In-App Purchase coming soon! Use a beta code to unlock now.');
-                  setShowPaywall(false);
+                  // Trigger native StoreKit purchase via Capacitor bridge
+                  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.purchase) {
+                    window.webkit.messageHandlers.purchase.postMessage('com.onemovegames.onemove.unlock');
+                  } else if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.StoreManager) {
+                    window.Capacitor.Plugins.StoreManager.purchase({ productId: 'com.onemovegames.onemove.unlock' });
+                  } else {
+                    try {
+                      webkit.messageHandlers.purchase.postMessage('com.onemovegames.onemove.unlock');
+                    } catch(e) {
+                      alert('Purchase unavailable. Please make sure you are connected to the internet and try again.');
+                    }
+                  }
+                  // DO NOT close paywall here - wait for iapSuccess event
+                  // Start polling for purchase completion
+                  let pollCount = 0;
+                  const pollInterval = setInterval(() => {
+                    pollCount++;
+                    if (localStorage.getItem('omPremiumUnlocked') === 'true') {
+                      setIsPremiumUnlocked(true);
+                      setShowPaywall(false);
+                      clearInterval(pollInterval);
+                    }
+                    if (pollCount > 60) clearInterval(pollInterval); // Stop after 60 seconds
+                  }, 1000);
                 }}
                 className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold text-lg transition-all shadow-lg mb-3"
               >
@@ -9637,12 +9947,30 @@ const handleDailyChallengeReplay = () => {
 
               <button
                 onClick={() => {
-                  setShowPaywall(false);
-                  setShowBetaUnlock(true);
+                  // Trigger native StoreKit restore via Capacitor bridge
+                  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.restore) {
+                    window.webkit.messageHandlers.restore.postMessage('restore');
+                  } else {
+                    StoreManager && StoreManager.shared && StoreManager.shared.restorePurchases();
+                  }
+                  // Poll for restore completion
+                  let pollCount = 0;
+                  const pollInterval = setInterval(() => {
+                    pollCount++;
+                    if (localStorage.getItem('omPremiumUnlocked') === 'true') {
+                      setIsPremiumUnlocked(true);
+                      setShowPaywall(false);
+                      clearInterval(pollInterval);
+                    }
+                    if (pollCount > 60) {
+                      clearInterval(pollInterval);
+                      alert('If you have previously purchased ONE MOVE, please try again with an active internet connection.');
+                    }
+                  }, 1000);
                 }}
-                className="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition-all"
+                className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition-all mb-1"
               >
-                I have a beta code
+                Restore Purchase
               </button>
 
               <button
@@ -9651,6 +9979,7 @@ const handleDailyChallengeReplay = () => {
               >
                 Maybe later
               </button>
+
             </div>
           </div>
         )}
@@ -9673,7 +10002,7 @@ const handleDailyChallengeReplay = () => {
       <div className="h-screen overflow-y-auto bg-gradient-to-br from-purple-950 via-blue-900 to-slate-900 p-6">
         <button 
           onClick={() => { setShowInstructionPopup(null); setScreen('home'); }}
-          className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50"
+          className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50 safe-top"
         >
           <Home className="w-5 h-5" />
         </button>
@@ -9865,14 +10194,6 @@ const handleDailyChallengeReplay = () => {
               </div>
             </button>
           </div>
-          
-          {/* About ONE MOVE - Tap 5x for Beta Unlock */}
-          <button
-            onClick={handleAboutTap}
-            className="w-full mt-6 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all duration-300 text-sm font-light tracking-wide"
-          >
-            ℹ️ About ONE MOVE
-          </button>
           
           <button
             onClick={() => setScreen('home')}
@@ -10365,70 +10686,6 @@ const handleDailyChallengeReplay = () => {
           </div>
         )}
         
-        {/* Beta Tester Unlock Popup */}
-        {showBetaUnlock && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => { setShowBetaUnlock(false); setBetaUnlockInput(''); }}>
-            <div className="bg-slate-800 rounded-2xl p-8 max-w-md border-2 border-purple-500" onClick={(e) => e.stopPropagation()}>
-              <h2 className="text-3xl font-light text-white text-center mb-6">🌟 Beta Tester Unlock</h2>
-              
-              {isPremiumUnlocked ? (
-                <div className="space-y-4">
-                  <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-4 text-center">
-                    <p className="text-green-400 font-semibold text-lg">Premium Already Unlocked! 💎</p>
-                    <p className="text-slate-300 text-sm mt-2">Thank you for being a beta tester!</p>
-                  </div>
-                  <button
-                    onClick={() => { setShowBetaUnlock(false); setBetaUnlockInput(''); }}
-                    className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all font-semibold"
-                  >
-                    Close
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="bg-purple-500/20 border border-purple-500/50 rounded-lg p-4">
-                    <p className="text-purple-300 text-center text-sm">Enter your beta tester code to unlock premium features for free!</p>
-                  </div>
-                  
-                  <input
-                    type="text"
-                    value={betaUnlockInput}
-                    onChange={(e) => setBetaUnlockInput(e.target.value)}
-                    placeholder="Enter code"
-                    className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg text-center uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    autoFocus
-                  />
-                  
-                  <button
-                    onClick={() => {
-                      const result = validateBetaCode(betaUnlockInput);
-                      if (result.success) {
-                        alert(result.message);
-                        setShowBetaUnlock(false);
-                        setBetaUnlockInput('');
-                      } else {
-                        alert(result.message);
-                        setBetaUnlockInput('');
-                      }
-                    }}
-                    className="w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all font-semibold"
-                  >
-                    Unlock Premium
-                  </button>
-                  
-                  <button
-                    onClick={() => { setShowBetaUnlock(false); setBetaUnlockInput(''); }}
-                    className="w-full py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all text-sm"
-                  >
-                    Cancel
-                  </button>
-                  
-                  <p className="text-slate-400 text-xs text-center mt-2">Code valid through April 15, 2026</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -10439,12 +10696,12 @@ const handleDailyChallengeReplay = () => {
       <div className="min-h-screen bg-gradient-to-br from-purple-950 via-blue-900 to-slate-900 flex items-center justify-center p-6">
         <button 
           onClick={handleHomeClick}
-          className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50"
+          className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50 safe-top"
         >
           <Home className="w-5 h-5" />
         </button>
         
-        <div className="absolute top-4 right-4 z-50">
+        <div className="absolute top-4 right-4 z-50 safe-top">
           <div className="bg-gradient-to-br from-yellow-500 to-amber-600 px-3 py-2 rounded-lg text-center shadow-lg flex items-center gap-2">
             <span className="text-white text-lg font-bold">💎</span>
             <span className="text-white text-xl font-bold">{triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent}</span>
@@ -10481,12 +10738,12 @@ const handleDailyChallengeReplay = () => {
       <div className="min-h-screen bg-gradient-to-br from-purple-950 via-blue-900 to-slate-900 flex items-center justify-center p-6">
         <button 
           onClick={handleHomeClick}
-          className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50"
+          className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50 safe-top"
         >
           <Home className="w-5 h-5" />
         </button>
 
-        <div className="absolute top-4 right-4 z-50">
+        <div className="absolute top-4 right-4 z-50 safe-top">
           <div className="bg-gradient-to-br from-yellow-500 to-amber-600 px-3 py-2 rounded-lg shadow-lg flex items-center gap-2">
             <span className="text-white text-lg font-bold">💎</span>
             <span className="text-white text-xl font-bold">{triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent}</span>
@@ -10641,11 +10898,11 @@ const handleDailyChallengeReplay = () => {
           <>
             <button 
               onClick={handleHomeClick}
-              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50"
+              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50 safe-top"
             >
               <Home className="w-5 h-5" />
             </button>
-            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-slate-800/70 rounded-full px-3 py-1">
+            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-slate-800/70 rounded-full px-3 py-1 safe-top">
               <span className="text-yellow-400 text-sm">💎</span>
               <span className="text-white text-sm font-bold">{totalGems}</span>
             </div>
@@ -10832,6 +11089,19 @@ const handleDailyChallengeReplay = () => {
             >
               ⏭️ Skip Puzzle (-200 💎)
             </button>
+          {totalGems < 200 && !emergencySkipUsed && !isDailyChallenge && (
+            <button onClick={() => {
+              setEmergencySkipUsed(true);
+              const newIndex = currentPuzzleIndex + 1;
+              setCurrentPuzzleIndex(newIndex);
+              saveProgress({ currentIndex: newIndex });
+              setProcessing(false);
+              setPendingTFAdvance(null);
+              handleNextPuzzle(newIndex);
+            }} className="w-full mt-2 px-6 py-3 bg-red-900/60 hover:bg-red-800/60 text-red-300 rounded-lg text-sm transition-all duration-300 border border-red-700/50">
+              🆘 Emergency Skip — Free (not enough gems to skip)
+            </button>
+          )}
           </div>
         </div>
         
@@ -10910,10 +11180,10 @@ const handleDailyChallengeReplay = () => {
       <div className="h-screen overflow-y-auto bg-gradient-to-br from-purple-950 via-blue-900 to-slate-900 flex flex-col items-center p-4 pt-16">
         {!isDailyChallenge && (
           <>
-            <button onClick={handleHomeClick} className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50">
+            <button onClick={handleHomeClick} className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50 safe-top">
               <Home className="w-5 h-5" />
             </button>
-            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-slate-800/70 rounded-full px-3 py-1">
+            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-slate-800/70 rounded-full px-3 py-1 safe-top">
               <span className="text-yellow-400 text-sm">💎</span>
               <span className="text-white text-sm font-bold">{totalGems}</span>
             </div>
@@ -11051,11 +11321,13 @@ const handleDailyChallengeReplay = () => {
             </button>
             <button onClick={() => {
               if (wsSubmitting) return;
-              setWsSubmitting(true);
               const flat = placedTiles.map(t => t.letter).join('');
               const answerRaw = currentPuzzle.answer || currentPuzzle.word || '';
               const cleanUser = flat.toUpperCase();
               const cleanAnswer = answerRaw.replace(/\s/g, '').toUpperCase();
+              // Guard: don't process if not all letters placed yet (catches render timing issues on long words)
+              if (cleanUser.length !== cleanAnswer.length) return;
+              setWsSubmitting(true);
               if (cleanUser === cleanAnswer) {
                 playSound('success');
                 setShowCorrectWord(true);
@@ -11074,10 +11346,11 @@ const handleDailyChallengeReplay = () => {
                   setTimeout(() => checkLevelUp(), 100);
                   setPendingWSAdvance({ index: wsNextIndex, delay: 3000 });
                 } else {
-                  setTimeout(() => { setShowCorrectWord(false); handleDailyChallengeSuccess(); }, 3000);
+                  setTimeout(() => { setShowCorrectWord(false); setWsSubmitting(false); handleDailyChallengeSuccess(correctStreak); }, 3000);
                 }
               } else {
                 if (isDailyChallenge) {
+                  setWsSubmitting(false);
                   saveDailyChallengeData(false, true, dailyChallengeStreak, false, false, false, null);
                   setDailyChallengeFailed(true);
                   setDailyChallengeInProgress(false);
@@ -11100,8 +11373,8 @@ const handleDailyChallengeReplay = () => {
                 setTimeout(() => checkLevelUp(), 100);
                 setPendingWSAdvance({ index: wsWrongIndex, delay: 3000 });
               }
-            }} disabled={!allPlaced || showCorrectWord || showWordWrong || wsSubmitting}
-              className={`flex-grow py-3 rounded-xl text-base font-bold transition-all duration-200 ${allPlaced && !showCorrectWord && !showWordWrong ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white shadow-lg active:scale-95' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}>
+            }} disabled={!allPlaced || showCorrectWord || showWordWrong || wsSubmittingState}
+              className={`flex-grow py-3 rounded-xl text-base font-bold transition-all duration-200 ${allPlaced && !showCorrectWord && !showWordWrong && !wsSubmittingState ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white shadow-lg active:scale-95' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}>
               {allPlaced ? '✓ Submit' : `${placedTiles.length} / ${totalLetters}`}
             </button>
           </div>
@@ -11135,6 +11408,18 @@ const handleDailyChallengeReplay = () => {
           <button onClick={() => setShowSkipConfirm(true)} className="w-full px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-all duration-300">
             ⏭️ Skip Puzzle (-200 💎)
           </button>
+          {totalGems < 200 && !emergencySkipUsed && (
+            <button onClick={() => {
+              setEmergencySkipUsed(true);
+              const newIndex = currentPuzzleIndex + 1;
+              setCurrentPuzzleIndex(newIndex);
+              saveProgress({ currentIndex: newIndex });
+              setWsSubmitting(false);
+              handleNextPuzzle(newIndex);
+            }} className="w-full px-6 py-3 bg-red-900/60 hover:bg-red-800/60 text-red-300 rounded-lg text-sm transition-all duration-300 border border-red-700/50">
+              🆘 Emergency Skip — Free (not enough gems to skip)
+            </button>
+          )}
         </div>
 
         {showSkipConfirm && (
@@ -11159,7 +11444,9 @@ const handleDailyChallengeReplay = () => {
     const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
     
     const handleMathAnswer = (selected) => {
-      if (showMathResult) return; // Prevent double tap
+      if (showMathResult || qmSubmitting || qmSubmittingRef.current) return; // Prevent double tap
+      qmSubmittingRef.current = true; // Set ref immediately before any state updates
+      setQmSubmitting(true);
       setMathSelectedAnswer(selected);
       if (selected === currentPuzzle.answer) {
         // CORRECT!
@@ -11168,7 +11455,7 @@ const handleDailyChallengeReplay = () => {
         
         // Check if this is Daily Challenge
         if (isDailyChallenge)  {
- 			 handleDailyChallengeSuccess();
+ 			 handleDailyChallengeSuccess(correctStreak);
   			return;
 		}        
         if (puzzleFirstAttempt) {
@@ -11232,11 +11519,11 @@ const handleDailyChallengeReplay = () => {
           <>
             <button 
               onClick={handleHomeClick}
-              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50"
+              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50 safe-top"
             >
               <Home className="w-5 h-5" />
             </button>
-            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-slate-800/70 rounded-full px-3 py-1">
+            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-slate-800/70 rounded-full px-3 py-1 safe-top">
               <span className="text-yellow-400 text-sm">💎</span>
               <span className="text-white text-sm font-bold">{totalGems}</span>
             </div>
@@ -11343,6 +11630,19 @@ const handleDailyChallengeReplay = () => {
               ⏭️ Skip Puzzle (-200 💎)
             </button>
           )}
+          {totalGems < 200 && !emergencySkipUsed && !isDailyChallenge && (
+            <button onClick={() => {
+              setEmergencySkipUsed(true);
+              const newIndex = currentPuzzleIndex + 1;
+              setCurrentPuzzleIndex(newIndex);
+              saveProgress({ currentIndex: newIndex });
+              qmSubmittingRef.current = false;
+              setQmSubmitting(false);
+              handleNextPuzzle(newIndex);
+            }} className="w-full mt-2 px-6 py-3 bg-red-900/60 hover:bg-red-800/60 text-red-300 rounded-lg text-sm transition-all duration-300 border border-red-700/50">
+              🆘 Emergency Skip — Free (not enough gems to skip)
+            </button>
+          )}
         </div>
         
         {/* Skip Confirmation */}
@@ -11427,7 +11727,7 @@ const handleDailyChallengeReplay = () => {
             // ALL MATCHED — WIN!
             playSound('success');
             setMemoryResult('perfect');
-            if (isDailyChallenge) { handleDailyChallengeSuccess(); return; }
+            if (isDailyChallenge) { handleDailyChallengeSuccess(correctStreak); return; }
             const mfGems = awardGems(100);
             const newPuzzleScore = puzzleScore + mfGems;
             setPuzzleScore(newPuzzleScore);
@@ -11488,10 +11788,10 @@ const handleDailyChallengeReplay = () => {
       <div className="min-h-screen bg-gradient-to-br from-purple-950 via-blue-900 to-slate-900 flex items-center justify-center p-4">
         {!isDailyChallenge && (
           <>
-            <button onClick={handleHomeClick} className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50">
+            <button onClick={handleHomeClick} className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50 safe-top">
               <Home className="w-5 h-5" />
             </button>
-            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-slate-800/70 rounded-full px-3 py-1">
+            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-slate-800/70 rounded-full px-3 py-1 safe-top">
               <span className="text-yellow-400 text-sm">💎</span>
               <span className="text-white text-sm font-bold">{totalGems}</span>
             </div>
@@ -11641,6 +11941,17 @@ const handleDailyChallengeReplay = () => {
               ⏭️ Skip Puzzle (-200 💎)
             </button>
           )}
+          {totalGems < 200 && !emergencySkipUsed && !isDailyChallenge && !flashPhase && matchedPairs.length < currentPuzzle.pairs && (
+            <button onClick={() => {
+              setEmergencySkipUsed(true);
+              const newIndex = currentPuzzleIndex + 1;
+              setCurrentPuzzleIndex(newIndex);
+              saveProgress({ currentIndex: newIndex });
+              handleNextPuzzle(newIndex);
+            }} className="w-full mt-2 px-6 py-3 bg-red-900/60 hover:bg-red-800/60 text-red-300 rounded-lg text-sm transition-all duration-300 border border-red-700/50">
+              🆘 Emergency Skip — Free (not enough gems to skip)
+            </button>
+          )}
         </div>
 
         {/* Skip Confirmation */}
@@ -11746,7 +12057,7 @@ const handleDailyChallengeReplay = () => {
       
       if (correct) {
         // Logic Grid is Daily Challenge only
-        handleDailyChallengeSuccess();
+        handleDailyChallengeSuccess(correctStreak);
       } else {
         // Wrong answer — one attempt, fail the Daily Challenge
         handleDailyChallengeFailure();
@@ -11949,7 +12260,7 @@ const handleDailyChallengeReplay = () => {
       <div className="min-h-screen bg-gradient-to-br from-purple-950 via-blue-900 to-slate-900 flex items-center justify-center p-4">
         <button 
           onClick={handleHomeClick}
-          className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50"
+          className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white transition-all duration-200 z-50 safe-top"
         >
           <Home className="w-5 h-5" />
         </button>
@@ -12056,6 +12367,7 @@ const handleDailyChallengeReplay = () => {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<OneMove />);
+// Loading screen will be hidden by the React component once it mounts
   </script>
 </body>
 </html>
