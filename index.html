@@ -3032,6 +3032,7 @@ const OneMove = () => {
   const [showDailyChallengeNudge, setShowDailyChallengeNudge] = useState(false);
   const [flashPhase, setFlashPhase] = useState(false); // true = cards visible during countdown
   const [streakShieldActive, setStreakShieldActive] = useState(false);
+  const [playStreakShields, setPlayStreakShields] = useState(0); // 0-3 shields for Days in a Row
   const [showPowerUps, setShowPowerUps] = useState(false);
   const [showStreakRestoreOffer, setShowStreakRestoreOffer] = useState(false);
   const [brokenStreakValue, setBrokenStreakValue] = useState(0);
@@ -3332,10 +3333,16 @@ const OneMove = () => {
     
     // Load Daily Challenge status
     const dcData = getDailyChallengeData();
+    // Always load DC streak from its own persistent key first
+    const persistedDCStreak = parseInt(localStorage.getItem('omDCStreak') || '0');
+    setDailyChallengeStreak(persistedDCStreak);
     if (dcData) {
       setDailyChallengeCompleted(dcData.completed);
       setDailyChallengeFailed(dcData.failed);
-      setDailyChallengeStreak(dcData.streak || 0);
+      // Use persisted streak, not today's data which may be stale
+      const streakToUse = Math.max(persistedDCStreak, dcData.streak || 0);
+      setDailyChallengeStreak(streakToUse);
+      localStorage.setItem('omDCStreak', String(streakToUse));
       setTotalDcDaysCompleted(dcData.totalDays || 0);
       setDailyChallengeAttempted(dcData.attempted || false);
       setDailyChallengeGemsAwarded(dcData.gemsAwarded || false);
@@ -3353,6 +3360,7 @@ const OneMove = () => {
     if (puData) {
       const pu = JSON.parse(puData);
       setStreakShieldActive(pu.streakShieldActive || false);
+      setPlayStreakShields(pu.playStreakShields || 0);
       setGemDoublerActive(pu.gemDoublerActive || false);
       setGemDoublerPuzzlesLeft(pu.gemDoublerPuzzlesLeft || 0);
     }
@@ -3392,12 +3400,28 @@ const OneMove = () => {
           streak: newStreak
         }));
       } else {
-        // Streak broken, reset
-        setPlayStreak(1);
-        localStorage.setItem('playStreak', JSON.stringify({
-          lastPlayed: today,
-          streak: 1
-        }));
+        // Streak broken — check if play streak shields available
+        const puRawStreak = localStorage.getItem('powerUps');
+        const puStreakCheck = puRawStreak ? JSON.parse(puRawStreak) : {};
+        const shieldsLeft = puStreakCheck.playStreakShields || 0;
+        if (shieldsLeft > 0) {
+          // Use a shield — preserve streak
+          const newShields = shieldsLeft - 1;
+          setPlayStreakShields(newShields);
+          setPlayStreak(data.streak);
+          savePowerUps({ playStreakShields: newShields });
+          localStorage.setItem('playStreak', JSON.stringify({
+            lastPlayed: today,
+            streak: data.streak
+          }));
+        } else {
+          // No shields — reset streak
+          setPlayStreak(1);
+          localStorage.setItem('playStreak', JSON.stringify({
+            lastPlayed: today,
+            streak: 1
+          }));
+        }
       }
     } else {
       // First time playing
@@ -3595,18 +3619,22 @@ const OneMove = () => {
   };
 
   const saveDailyChallengeData = (completed, failed, streak, gemsAwarded, replayed, inProgress = false, savedState = null) => {
-  localStorage.setItem('dailyChallenge', JSON.stringify({
-    date: getTodayDateString(),
-    completed,
-    failed,
-    streak,
-    gemsAwarded: gemsAwarded || false,
-    replayed: replayed || false,
-    attempted: true,
-    inProgress: inProgress || false,
-    savedState: savedState || null
-  }));
-};
+    // Always save streak to its own persistent key
+    if (streak !== undefined && streak !== null) {
+      localStorage.setItem('omDCStreak', String(streak));
+    }
+    localStorage.setItem('dailyChallenge', JSON.stringify({
+      date: getTodayDateString(),
+      completed,
+      failed,
+      streak,
+      gemsAwarded: gemsAwarded || false,
+      replayed: replayed || false,
+      attempted: true,
+      inProgress: inProgress || false,
+      savedState: savedState || null
+    }));
+  };
 
   // LOGIC GRID GENERATOR - Must be defined before generateDailyChallenge
   const generateLogicGrid = (seed) => {
@@ -7919,11 +7947,12 @@ const handleDailyChallengeSuccess = (currentCorrectStreak) => {
     saveProgress({ dailyChallengeGems: newDCGems });
   }
   
-  // Update DC streak
+  // Update DC streak — use persistent key to maintain across days
   const dcData = getDailyChallengeData();
-  const newStreak = dcData ? (dcData.streak || 0) + 1 : 1;
+  const persistedStreak = parseInt(localStorage.getItem('omDCStreak') || '0');
+  const newStreak = persistedStreak + 1;
   setDailyChallengeStreak(newStreak);
-  localStorage.setItem('dcLastStreak', String(newStreak));
+  localStorage.setItem('omDCStreak', String(newStreak));
   const newTotalDays = totalDcDaysCompleted + 1;
   setTotalDcDaysCompleted(newTotalDays);
   
@@ -8008,10 +8037,11 @@ const handleDailyChallengeReplay = () => {
         const newDCGems = dailyChallengeGems + 500;
         setDailyChallengeGems(newDCGems);
         
-        // Update streak
-        const dcData = getDailyChallengeData();
-        const newStreak = dcData ? (dcData.streak || 0) + 1 : 1;
+        // Update streak — use persistent key
+        const persistedStreakB = parseInt(localStorage.getItem('omDCStreak') || '0');
+        const newStreak = persistedStreakB + 1;
         setDailyChallengeStreak(newStreak);
+        localStorage.setItem('omDCStreak', String(newStreak));
         
         // Save completion
         saveDailyChallengeData(true, false, newStreak);
@@ -9012,7 +9042,73 @@ const handleDailyChallengeReplay = () => {
 
                 <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest px-1 pb-1 pt-2">Streak Protection</p>
 
-                {/* 4. Streak Restore — 200 */}
+                {/* DC Streak Shield — 250 */}
+                <div className="bg-slate-700/60 rounded-xl p-4 border border-blue-500/30">
+                  <div className="flex items-center justify-between mb-1">
+                    <div>
+                      <p className="text-white font-bold text-sm">🛡️ DC Streak Shield</p>
+                      <p className="text-slate-400 text-xs">Protects your DC streak if you miss a day</p>
+                      <p className="text-slate-500 text-xs">Buy in advance • one shield at a time</p>
+                    </div>
+                    <span className="text-yellow-400 font-bold text-sm">250 💎</span>
+                  </div>
+                  {streakShieldActive && <p className="text-green-400 text-xs mb-2">🛡️ Shield active and ready</p>}
+                  <button
+                    onClick={() => {
+                      const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
+                      if (streakShieldActive) { alert('DC Streak Shield already active!'); return; }
+                      if (totalGems < 250) { alert('Not enough gems! Need 250 💎'); return; }
+                      const newSpent = gemsSpent + 250;
+                      setGemsSpent(newSpent);
+                      saveProgress({ gemsSpent: newSpent });
+                      setStreakShieldActive(true);
+                      savePowerUps({ streakShieldActive: true, shieldPurchasedDate: getTodayDateString() });
+                    }}
+                    disabled={streakShieldActive}
+                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-all ${streakShieldActive ? 'bg-green-700 text-green-200 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                  >
+                    {streakShieldActive ? '🛡️ DC Shield Active' : 'Buy DC Shield — 250 💎'}
+                  </button>
+                </div>
+
+                {/* Days in a Row Streak Protector — 250 each, up to 3 */}
+                <div className="bg-slate-700/60 rounded-xl p-4 border border-green-500/30">
+                  <div className="flex items-center justify-between mb-1">
+                    <div>
+                      <p className="text-white font-bold text-sm">📅 Days in a Row Streak Protector</p>
+                      <p className="text-slate-400 text-xs">Protects your daily play streak if you miss a day</p>
+                      <p className="text-slate-500 text-xs">250 💎 each • max 3 shields at a time</p>
+                    </div>
+                    <span className="text-yellow-400 font-bold text-sm">250 💎</span>
+                  </div>
+                  {playStreakShields > 0 && <p className="text-green-400 text-xs mb-2">📅 {playStreakShields} shield{playStreakShields !== 1 ? 's' : ''} ready</p>}
+                  <div className="flex gap-2">
+                    {[1, 2, 3].map(qty => (
+                      <button
+                        key={qty}
+                        onClick={() => {
+                          const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
+                          const cost = qty * 250;
+                          const newTotal = playStreakShields + qty;
+                          if (newTotal > 3) { alert(`You already have ${playStreakShields} shield${playStreakShields !== 1 ? 's' : ''}. Max 3 at a time.`); return; }
+                          if (totalGems < cost) { alert(`Not enough gems! Need ${cost} 💎`); return; }
+                          const newSpent = gemsSpent + cost;
+                          setGemsSpent(newSpent);
+                          saveProgress({ gemsSpent: newSpent });
+                          const newShields = playStreakShields + qty;
+                          setPlayStreakShields(newShields);
+                          savePowerUps({ playStreakShields: newShields });
+                        }}
+                        disabled={playStreakShields + qty > 3}
+                        className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${playStreakShields + qty > 3 ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                      >
+                        {qty === 1 ? '1 Day' : qty === 2 ? '2 Days' : '3 Days'}<br/>{qty * 250} 💎
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Streak Restore — 200 */}
                 <div className="bg-slate-700/60 rounded-xl p-4 border border-orange-500/30">
                   <div className="flex items-center justify-between mb-1">
                     <div>
@@ -9044,35 +9140,6 @@ const handleDailyChallengeReplay = () => {
                     }`}
                   >
                     {correctStreak > 0 ? 'Streak still active' : brokenStreakValue === 0 ? 'No streak to restore' : `Restore ${brokenStreakValue} streak — 200 💎`}
-                  </button>
-                </div>
-
-                {/* 5. DC Streak Shield — 250 */}
-                <div className="bg-slate-700/60 rounded-xl p-4 border border-blue-500/30">
-                  <div className="flex items-center justify-between mb-1">
-                    <div>
-                      <p className="text-white font-bold text-sm">🛡️ DC Streak Shield</p>
-                      <p className="text-slate-400 text-xs">Protects your DC streak if you miss a day</p>
-                      <p className="text-slate-500 text-xs">Buy in advance • one shield at a time</p>
-                    </div>
-                    <span className="text-yellow-400 font-bold text-sm">250 💎</span>
-                  </div>
-                  {streakShieldActive && <p className="text-green-400 text-xs mb-2">🛡️ Shield active and ready</p>}
-                  <button
-                    onClick={() => {
-                      const totalGems = triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
-                      if (streakShieldActive) { alert('DC Streak Shield already active!'); return; }
-                      if (totalGems < 250) { alert('Not enough gems! Need 250 💎'); return; }
-                      const newSpent = gemsSpent + 250;
-                      setGemsSpent(newSpent);
-                      saveProgress({ gemsSpent: newSpent });
-                      setStreakShieldActive(true);
-                      savePowerUps({ streakShieldActive: true, shieldPurchasedDate: getTodayDateString() });
-                    }}
-                    disabled={streakShieldActive}
-                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-all ${streakShieldActive ? 'bg-green-700 text-green-200 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-                  >
-                    {streakShieldActive ? '🛡️ DC Shield Active' : 'Buy DC Shield — 250 💎'}
                   </button>
                 </div>
 
@@ -9324,6 +9391,15 @@ const handleDailyChallengeReplay = () => {
               </div>
             </button>
           </div>
+          <button
+            onClick={() => setScreen('instructions')}
+            className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-700/80 transition-all duration-300 relative"
+          >
+            <span className="text-slate-300 text-xs font-medium">❓ How to Play</span>
+            {sessionCount <= 5 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-indigo-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">START</span>
+            )}
+          </button>
         </div>
         )}
 
@@ -9849,19 +9925,15 @@ const handleDailyChallengeReplay = () => {
               )}
             </button>
             
+            {!isPremiumUnlocked && (
             <button
-              onClick={() => setScreen('instructions')}
-              className="w-full px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all duration-300 text-sm font-light tracking-wide relative"
-              style={sessionCount <= 5 ? {animation: 'htpPulse 2s ease-in-out infinite'} : {}}
+              onClick={() => setShowPaywall(true)}
+              className="w-full px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all duration-300 text-sm font-medium tracking-wide flex items-center justify-center gap-2"
             >
-              HOW TO PLAY
-              {sessionCount <= 5 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-indigo-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">
-                  START HERE
-                </span>
-              )}
+              💎 Go Premium
             </button>
-            
+            )}
+
             <button
               onClick={() => {
                 setShowGemsAndRewards(true);
