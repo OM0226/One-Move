@@ -3143,6 +3143,12 @@ const OneMove = () => {
   const [mathSelectedAnswer, setMathSelectedAnswer] = useState(null);
   const [bonusGems, setBonusGems] = useState(0);
   const [lastAwardedLevel, setLastAwardedLevel] = useState('');
+  const [spinAvailable, setSpinAvailable] = useState(false);
+  const [showSpinWheel, setShowSpinWheel] = useState(false);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [spinResult, setSpinResult] = useState(null);
+  const [spinDegrees, setSpinDegrees] = useState(0);
+  const [showSpinResult, setShowSpinResult] = useState(false);
   
 
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
@@ -3314,6 +3320,7 @@ const OneMove = () => {
         // Normal load
         setBonusGems(savedBonus);
         setLastAwardedLevel(savedLevel);
+        setSpinAvailable(data.spinAvailable || false);
       }
       
       // Load username
@@ -3488,13 +3495,10 @@ const OneMove = () => {
     return () => clearTimeout(timer);
   }, [pendingQMAdvance]);
 
-  // Splash screen timer
+  // Splash screen timer — go straight to home, no intermediate screen needed
   useEffect(() => {
     if (screen === 'splash') {
-      const timer = setTimeout(() => {
-        setScreen('home');
-      }, 3500);  // 3.5 seconds — allows fade-in animations to complete
-      return () => clearTimeout(timer);
+      setScreen('home');
     }
   }, [screen]);
 
@@ -3518,6 +3522,7 @@ const OneMove = () => {
       usedTrivia,
       bonusGems,
       lastAwardedLevel,
+      spinAvailable,
       username,
       // CUSTOMIZATION DATA - Must be in base save!
       selectedIcon,
@@ -6946,7 +6951,8 @@ const OneMove = () => {
     const newBonusGems = bonusGems + levelInfo.reward;
     setBonusGems(newBonusGems);
     setLastAwardedLevel(currentLevel);
-    saveProgress({ bonusGems: newBonusGems, lastAwardedLevel: currentLevel });
+    setSpinAvailable(true);
+    saveProgress({ bonusGems: newBonusGems, lastAwardedLevel: currentLevel, spinAvailable: true });
     
     console.log(`🏆 LEVEL UP! ${currentLevel} - Awarded ${levelInfo.reward} bonus gems`);
     
@@ -6958,8 +6964,9 @@ const OneMove = () => {
         const newTotal = bonusGems + levelInfo.reward + milestoneBonus;
         setBonusGems(newTotal);
         setLastAwardedLevel(currentLevel + `,${milestoneKey}`);
-        saveProgress({ bonusGems: newTotal, lastAwardedLevel: currentLevel + `,${milestoneKey}` });
-        console.log(`🎯 MILESTONE! Puzzle ${currentPuzzleIndex} - Awarded ${milestoneBonus} bonus gems`);
+        setSpinAvailable(true);
+        saveProgress({ bonusGems: newTotal, lastAwardedLevel: currentLevel + `,${milestoneKey}`, spinAvailable: true });
+        console.log(`🎯 MILESTONE! Puzzle ${currentPuzzleIndex} - Awarded ${milestoneBonus} bonus gems + spin!`);
       }
     }
   };
@@ -8544,58 +8551,6 @@ const handleDailyChallengeReplay = () => {
   };
 
   // Splash Screen  
-  if (screen === 'splash') {
-    return (
-      <div
-        className="min-h-screen flex items-center justify-center cursor-pointer overflow-hidden"
-        style={{background: 'linear-gradient(175deg, #0d1b4b 0%, #1a2f8a 40%, #1d4ed8 100%)'}}
-        onClick={() => setScreen('home')}
-      >
-        <div className="text-center flex flex-col items-center" style={{gap: '36px'}}>
-
-          {/* Icon — clean, no glow rings, no blend modes */}
-          <div style={{animation: 'fadeInUp 0.7s ease-out forwards', opacity: 0}}>
-            <img
-              src={MAZE_ICON}
-              alt="ONE MOVE"
-              style={{
-                width: '180px',
-                height: '180px',
-                borderRadius: '40px',
-                display: 'block',
-              }}
-            />
-          </div>
-
-          {/* Title + tagline */}
-          <div style={{animation: 'fadeInUp 0.7s ease-out 0.35s forwards', opacity: 0}}>
-            <h1 style={{
-              fontSize: '3.6rem',
-              fontWeight: '200',
-              color: '#ffffff',
-              letterSpacing: '0.18em',
-              margin: '0 0 10px 0',
-              fontFamily: 'Arial, sans-serif',
-            }}>
-              ONE MOVE
-            </h1>
-            <p style={{
-              fontSize: '1rem',
-              fontWeight: '300',
-              color: 'rgba(147,197,253,0.9)',
-              letterSpacing: '0.1em',
-              margin: 0,
-              fontFamily: 'Arial, sans-serif',
-            }}>
-              Think Fast. Play Smart. One Move.
-            </p>
-          </div>
-
-        </div>
-      </div>
-    );
-  }
-
   // Daily Challenge Result Screen - CHECK THIS FIRST!
   if (showDailyChallengeResult) {
     return (
@@ -9934,6 +9889,15 @@ const handleDailyChallengeReplay = () => {
             </button>
             )}
 
+            {spinAvailable && (
+            <button
+              onClick={() => setShowSpinWheel(true)}
+              className="w-full px-6 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-white rounded-lg transition-all duration-300 text-sm font-bold tracking-wide flex items-center justify-center gap-2 shadow-lg animate-pulse"
+            >
+              🎡 Spin Your Reward Wheel!
+            </button>
+            )}
+
             <button
               onClick={() => {
                 setShowGemsAndRewards(true);
@@ -9955,6 +9919,154 @@ const handleDailyChallengeReplay = () => {
             </button>
           </div>
         </div>
+
+        {/* Spinning Wheel Modal */}
+        {showSpinWheel && (
+          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-6">
+            <div className="bg-slate-800 rounded-2xl p-6 max-w-sm w-full border-2 border-yellow-500 shadow-2xl text-center">
+              <h2 className="text-2xl font-bold text-white mb-1">🎡 Reward Wheel</h2>
+              <p className="text-slate-400 text-sm mb-4">You leveled up! Spin to win bonus gems!</p>
+
+              {/* Wheel Container */}
+              <div className="relative flex items-center justify-center mb-4">
+                {/* Pointer arrow */}
+                <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1 z-10 text-2xl">▼</div>
+
+                {/* Wheel */}
+                <div
+                  style={{
+                    width: 240,
+                    height: 240,
+                    borderRadius: '50%',
+                    border: '6px solid #f59e0b',
+                    position: 'relative',
+                    transition: isSpinning ? 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)' : 'none',
+                    transform: `rotate(${spinDegrees}deg)`,
+                    boxShadow: '0 0 30px rgba(245, 158, 11, 0.5)',
+                    overflow: 'hidden'
+                  }}
+                >
+                  {/* Wheel segments */}
+                  {[
+                    { gems: 100, color: '#1e40af', angle: 0 },
+                    { gems: 200, color: '#1d4ed8', angle: 72 },
+                    { gems: 300, color: '#2563eb', angle: 144 },
+                    { gems: 400, color: '#3b82f6', angle: 216 },
+                    { gems: 500, color: '#60a5fa', angle: 288 },
+                  ].map((seg, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        position: 'absolute',
+                        width: '100%',
+                        height: '100%',
+                        transform: `rotate(${seg.angle}deg)`,
+                        transformOrigin: '50% 50%',
+                      }}
+                    >
+                      {/* Segment slice using clip-path */}
+                      <div style={{
+                        position: 'absolute',
+                        width: '100%',
+                        height: '100%',
+                        background: seg.color,
+                        clipPath: 'polygon(50% 50%, 50% 0%, 85% 0%, 100% 15%, 100% 35%, 85% 50%)',
+                      }} />
+                      {/* Gem label */}
+                      <div style={{
+                        position: 'absolute',
+                        top: '18%',
+                        left: '62%',
+                        transform: 'translate(-50%, -50%) rotate(36deg)',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '13px',
+                        textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        💎 {seg.gems}
+                      </div>
+                    </div>
+                  ))}
+                  {/* Center circle */}
+                  <div style={{
+                    position: 'absolute',
+                    width: 50,
+                    height: 50,
+                    borderRadius: '50%',
+                    background: '#0f172a',
+                    border: '4px solid #f59e0b',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: 10
+                  }} />
+                </div>
+              </div>
+
+              {/* Result */}
+              {showSpinResult && spinResult && (
+                <div className="mb-4 py-3 px-4 bg-yellow-500/20 border border-yellow-500 rounded-xl">
+                  <p className="text-yellow-400 font-bold text-xl">🎉 You won {spinResult} gems!</p>
+                </div>
+              )}
+
+              {/* Spin Button */}
+              {!showSpinResult ? (
+                <button
+                  onClick={() => {
+                    if (isSpinning) return;
+                    const gemValues = [100, 200, 300, 400, 500];
+                    const resultIdx = Math.floor(Math.random() * gemValues.length);
+                    const result = gemValues[resultIdx];
+                    // Calculate rotation — spin 5 full rotations + land on segment
+                    const segmentAngle = 360 / 5;
+                    const targetAngle = 360 - (resultIdx * segmentAngle) - segmentAngle / 2;
+                    const totalRotation = spinDegrees + 1800 + targetAngle;
+                    setSpinResult(result);
+                    setIsSpinning(true);
+                    setSpinDegrees(totalRotation);
+                    setTimeout(() => {
+                      setIsSpinning(false);
+                      setShowSpinResult(true);
+                    }, 4200);
+                  }}
+                  disabled={isSpinning}
+                  className={`w-full py-3 rounded-xl font-bold text-white text-lg transition-all ${isSpinning ? 'bg-slate-600 cursor-not-allowed' : 'bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 shadow-lg'}`}
+                >
+                  {isSpinning ? '🎡 Spinning...' : '🎡 SPIN NOW!'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    // Award gems
+                    const newBonusGems = bonusGems + spinResult;
+                    setBonusGems(newBonusGems);
+                    setSpinAvailable(false);
+                    setShowSpinWheel(false);
+                    setShowSpinResult(false);
+                    setSpinResult(null);
+                    setSpinDegrees(0);
+                    saveProgress({ bonusGems: newBonusGems, spinAvailable: false });
+                  }}
+                  className="w-full py-3 rounded-xl font-bold text-white text-lg bg-green-600 hover:bg-green-500 transition-all shadow-lg"
+                >
+                  ✅ Collect {spinResult} Gems!
+                </button>
+              )}
+
+              {/* Close */}
+              {!isSpinning && !showSpinResult && (
+                <button
+                  onClick={() => setShowSpinWheel(false)}
+                  className="mt-3 w-full py-2 rounded-xl text-slate-400 text-sm hover:text-white transition-all"
+                >
+                  Spin Later
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Paywall Modal */}
         {showPaywall && (
