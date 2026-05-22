@@ -3153,7 +3153,7 @@ const OneMove = () => {
 
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
-  const FREE_PUZZLE_LIMIT = 500; // TEMP - change back to 60 before submitting 1.9!
+  const FREE_PUZZLE_LIMIT = 60;
   const [showUsernameEdit, setShowUsernameEdit] = useState(false);
   const [tempUsername, setTempUsername] = useState('');
   const [sessionCount, setSessionCount] = useState(0); // tracks sessions for HTP pulse
@@ -6973,54 +6973,81 @@ const OneMove = () => {
 
   const generateTileFlipPuzzle = (trivia) => {
     const size = currentPuzzleIndex < 10 ? 3 : currentPuzzleIndex < 50 ? 4 : 5;
-    const row = Math.floor(Math.random() * size);
-    const col = Math.floor(Math.random() * size);
-    const patterns = Object.values(FLIP_PATTERNS);
-    const availablePatterns = patterns.filter(p => !usedPatterns.slice(-6).includes(p));
-    const pattern = availablePatterns.length > 0 
-      ? availablePatterns[Math.floor(Math.random() * availablePatterns.length)]
-      : patterns[Math.floor(Math.random() * patterns.length)];
-    setUsedPatterns([...usedPatterns, pattern].slice(-10)); // Keep last 10
     const colorIndex = Math.floor(currentPuzzleIndex / 7) % TILE_COLORS.length;
-    
-    const solvedGrid = Array(size).fill(null).map(() => Array(size).fill(1));
-    const puzzleGrid = solvedGrid.map(r => [...r]);
-    
-    const flip = (r, c) => {
-      if (r >= 0 && r < size && c >= 0 && c < size) {
-        puzzleGrid[r][c] = puzzleGrid[r][c] === 1 ? 0 : 1;
-      }
-    };
-    
-    flip(row, col);
-    
-    switch(pattern) {
-      case FLIP_PATTERNS.CROSS:
-        flip(row - 1, col);
-        flip(row + 1, col);
-        flip(row, col - 1);
-        flip(row, col + 1);
-        break;
-      case FLIP_PATTERNS.X_PATTERN:
-        flip(row - 1, col - 1);
-        flip(row - 1, col + 1);
-        flip(row + 1, col - 1);
-        flip(row + 1, col + 1);
-        break;
-      case FLIP_PATTERNS.SQUARE:
-        for(let dr = -1; dr <= 1; dr++) {
-          for(let dc = -1; dc <= 1; dc++) {
-            if(dr !== 0 || dc !== 0) flip(row + dr, col + dc);
-          }
+
+    // Generate puzzle by starting from SOLVED state and applying known flips
+    // This guarantees solvability — we always know the solution
+    const generateSolvable = () => {
+      const row = Math.floor(Math.random() * size);
+      const col = Math.floor(Math.random() * size);
+      const patterns = Object.values(FLIP_PATTERNS);
+      const availablePatterns = patterns.filter(p => !usedPatterns.slice(-6).includes(p));
+      const pattern = availablePatterns.length > 0
+        ? availablePatterns[Math.floor(Math.random() * availablePatterns.length)]
+        : patterns[Math.floor(Math.random() * patterns.length)];
+
+      // Start with all tiles ON (solved state)
+      const solvedGrid = Array(size).fill(null).map(() => Array(size).fill(1));
+      const puzzleGrid = solvedGrid.map(r => [...r]);
+
+      const flip = (r, c) => {
+        if (r >= 0 && r < size && c >= 0 && c < size) {
+          puzzleGrid[r][c] = puzzleGrid[r][c] === 1 ? 0 : 1;
         }
-        break;
+      };
+
+      // Apply the pattern starting from solution position
+      // This creates a puzzle that is ALWAYS solvable by tapping (row, col)
+      flip(row, col);
+      switch(pattern) {
+        case FLIP_PATTERNS.CROSS:
+          flip(row - 1, col); flip(row + 1, col);
+          flip(row, col - 1); flip(row, col + 1);
+          break;
+        case FLIP_PATTERNS.X_PATTERN:
+          flip(row - 1, col - 1); flip(row - 1, col + 1);
+          flip(row + 1, col - 1); flip(row + 1, col + 1);
+          break;
+        case FLIP_PATTERNS.SQUARE:
+          for(let dr = -1; dr <= 1; dr++) {
+            for(let dc = -1; dc <= 1; dc++) {
+              if(dr !== 0 || dc !== 0) flip(row + dr, col + dc);
+            }
+          }
+          break;
+      }
+
+      // Validate: puzzle must have at least 1 dark tile and be different from solved
+      const darkTiles = puzzleGrid.flat().filter(t => t === 0).length;
+      if (darkTiles === 0 || darkTiles === size * size) {
+        return null; // Regenerate if all same
+      }
+
+      return { puzzleGrid, row, col, pattern };
+    };
+
+    // Keep trying until we get a valid solvable puzzle
+    let result = null;
+    let attempts = 0;
+    while (!result && attempts < 20) {
+      result = generateSolvable();
+      attempts++;
     }
-    
+
+    // Fallback — simple guaranteed puzzle if all attempts fail
+    if (!result) {
+      const puzzleGrid = Array(size).fill(null).map(() => Array(size).fill(1));
+      puzzleGrid[0][0] = 0;
+      result = { puzzleGrid, row: 0, col: 0, pattern: FLIP_PATTERNS.CROSS };
+    }
+
+    setUsedPatterns([...usedPatterns, result.pattern].slice(-10));
+
     return {
       type: PUZZLE_TYPES.TILE_FLIP,
-      grid: puzzleGrid,
-      solution: { row, col },
-      pattern,
+      grid: result.puzzleGrid,
+      solution: { row: result.row, col: result.col },
+      pattern: result.pattern,
       size,
       colorIndex,
       trivia
@@ -8705,6 +8732,12 @@ const handleDailyChallengeReplay = () => {
                       <p>✓ Daily Challenge complete: <span className="text-white font-bold">+500</span></p>
                     </div>
                   </div>
+
+                  {/* Spin Wheel description */}
+                  <div className="bg-yellow-500/10 rounded-lg p-3 border border-yellow-500/30">
+                    <p className="text-yellow-400 font-semibold text-sm mb-1">🎡 Reward Spin Wheel</p>
+                    <p className="text-slate-300 text-xs">Every time you level up you earn a free spin on the Reward Wheel! Spin to win between <span className="text-white font-bold">100 and 500 bonus gems</span>. The spin button appears on your home screen below the Daily Challenge banner when a spin is ready. You can spin whenever you like — it stays available until you use it!</p>
+                  </div>
                   
                   <div>
                     <p className="text-red-400 font-semibold mb-2">SPEND GEMS:</p>
@@ -9796,6 +9829,21 @@ const handleDailyChallengeReplay = () => {
               </div>
             </div>
           )}
+
+          {/* Spin Wheel Button — appears right below Daily Challenge when eligible */}
+          {spinAvailable && (
+            <button
+              onClick={() => setShowSpinWheel(true)}
+              className="w-full mb-3 px-8 py-4 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-white rounded-lg transition-all duration-300 font-bold tracking-wide flex items-center justify-center gap-3 shadow-lg"
+              style={{animation: 'htpPulse 2s ease-in-out infinite'}}
+            >
+              <span className="text-2xl">🎡</span>
+              <div className="text-left">
+                <p className="text-lg font-bold">Spin Your Reward Wheel!</p>
+                <p className="text-xs text-yellow-100">You leveled up — claim your bonus gems!</p>
+              </div>
+            </button>
+          )}
           
           <div className="space-y-3">
             {/* Active Power-Up Indicators */}
@@ -9886,15 +9934,6 @@ const handleDailyChallengeReplay = () => {
               className="w-full px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all duration-300 text-sm font-medium tracking-wide flex items-center justify-center gap-2"
             >
               💎 Go Premium
-            </button>
-            )}
-
-            {spinAvailable && (
-            <button
-              onClick={() => setShowSpinWheel(true)}
-              className="w-full px-6 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-white rounded-lg transition-all duration-300 text-sm font-bold tracking-wide flex items-center justify-center gap-2 shadow-lg animate-pulse"
-            >
-              🎡 Spin Your Reward Wheel!
             </button>
             )}
 
