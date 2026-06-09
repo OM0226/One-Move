@@ -3143,6 +3143,28 @@ const OneMove = () => {
   const [mathSelectedAnswer, setMathSelectedAnswer] = useState(null);
   const [bonusGems, setBonusGems] = useState(0);
   const [lastAwardedLevel, setLastAwardedLevel] = useState('');
+
+  // ============================================================
+  // SUPERSTARS STATE
+  // ============================================================
+  const [superstarsOptedIn, setSuperstarsOptedIn] = useState(false);
+  const [weeklyGems, setWeeklyGems] = useState(0);
+  const [weeklyGemStart, setWeeklyGemStart] = useState(0); // gems at start of week
+  const [weekStartDate, setWeekStartDate] = useState('');
+  const [superstarsLeaderboard, setSuperstarsLeaderboard] = useState([]);
+  const [playerWeeklyRank, setPlayerWeeklyRank] = useState(null);
+  const [playerTier, setPlayerTier] = useState('');
+  const [weeklyTrophies, setWeeklyTrophies] = useState([]); // array of past week trophies
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
+
+  // Tier thresholds
+  const SUPERSTAR_TIERS = {
+    BRONZE: { name: 'Bronze', min: 0, max: 1000, emoji: '🥉', color: 'text-amber-600', bg: 'bg-amber-900/30', border: 'border-amber-600' },
+    SILVER: { name: 'Silver', min: 1001, max: 2500, emoji: '🥈', color: 'text-slate-300', bg: 'bg-slate-700/30', border: 'border-slate-400' },
+    GOLD: { name: 'Gold', min: 2501, max: 999999, emoji: '🥇', color: 'text-yellow-400', bg: 'bg-yellow-900/30', border: 'border-yellow-500' },
+  };
+
+  const WEEKLY_MIN_QUALIFY = 1000; // minimum gems to qualify for prizes
   const [spinAvailable, setSpinAvailable] = useState(false);
   const [showSpinWheel, setShowSpinWheel] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -3211,6 +3233,17 @@ const OneMove = () => {
   useEffect(() => {
     // Hide splash screen now that React has mounted
     if (window.__hideSplash) window.__hideSplash();
+
+    // Load Superstars data
+    const ssData = loadSuperstarsData();
+    if (ssData.optedIn) {
+      setSuperstarsOptedIn(true);
+      checkWeekReset();
+      const trophies = JSON.parse(localStorage.getItem('omTrophies') || '[]');
+      setWeeklyTrophies(trophies);
+      const leaderboard = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
+      setSuperstarsLeaderboard(leaderboard);
+    }
 
     // CRITICAL: Check premium unlock status FIRST before anything else
     if (localStorage.getItem('omPremiumUnlocked') === 'true') {
@@ -3495,12 +3528,133 @@ const OneMove = () => {
     return () => clearTimeout(timer);
   }, [pendingQMAdvance]);
 
+  // Update weekly gems and leaderboard whenever gems change
+  useEffect(() => {
+    if (superstarsOptedIn && weekStartDate) {
+      const currentWeekly = getCurrentWeeklyGems();
+      setWeeklyGems(currentWeekly);
+      updateLeaderboard(currentWeekly);
+    }
+  }, [triviaScore, puzzleScore, dailyChallengeGems, bonusGems, gemsSpent, superstarsOptedIn]);
+
   // Splash screen timer — go straight to home, no intermediate screen needed
   useEffect(() => {
     if (screen === 'splash') {
       setScreen('home');
     }
   }, [screen]);
+
+  // ============================================================
+  // SUPERSTARS HELPER FUNCTIONS
+  // ============================================================
+
+  const getWeekStartDate = () => {
+    const now = new Date();
+    const day = now.getDay(); // 0=Sun, 1=Mon...
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+    const monday = new Date(now.setDate(diff));
+    return monday.toISOString().split('T')[0];
+  };
+
+  const getPlayerTier = (gems) => {
+    if (gems >= 2501) return SUPERSTAR_TIERS.GOLD;
+    if (gems >= 1001) return SUPERSTAR_TIERS.SILVER;
+    return SUPERSTAR_TIERS.BRONZE;
+  };
+
+  const getTotalGems = () => triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
+
+  const getCurrentWeeklyGems = () => Math.max(0, getTotalGems() - weeklyGemStart);
+
+  const saveSuperstarsData = (data) => {
+    const existing = JSON.parse(localStorage.getItem('omSuperstars') || '{}');
+    localStorage.setItem('omSuperstars', JSON.stringify({ ...existing, ...data }));
+  };
+
+  const loadSuperstarsData = () => {
+    return JSON.parse(localStorage.getItem('omSuperstars') || '{}');
+  };
+
+  const updateLeaderboard = (playerWeeklyGemsTotal) => {
+    const existing = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
+    const playerEntry = {
+      username: username || 'Player',
+      icon: selectedIcon || 'default',
+      weeklyGems: playerWeeklyGemsTotal,
+      tier: getPlayerTier(playerWeeklyGemsTotal).name,
+      updatedAt: new Date().toISOString(),
+      isCurrentPlayer: true,
+    };
+
+    // Remove existing entry for this player
+    const filtered = existing.filter(e => !e.isCurrentPlayer);
+    // Add updated entry and sort
+    const updated = [...filtered, playerEntry]
+      .sort((a, b) => b.weeklyGems - a.weeklyGems)
+      .slice(0, 100); // Keep top 100
+
+    localStorage.setItem('omLeaderboard', JSON.stringify(updated));
+
+    // Find rank
+    const rank = updated.findIndex(e => e.isCurrentPlayer) + 1;
+    setPlayerWeeklyRank(rank);
+    setSuperstarsLeaderboard(updated);
+    setPlayerTier(getPlayerTier(playerWeeklyGemsTotal).name);
+
+    return rank;
+  };
+
+  const checkWeekReset = () => {
+    const currentWeekStart = getWeekStartDate();
+    const ssData = loadSuperstarsData();
+
+    if (ssData.weekStartDate && ssData.weekStartDate !== currentWeekStart) {
+      // New week! Save last week's results as trophy if top 3
+      const leaderboard = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
+      const playerEntry = leaderboard.find(e => e.isCurrentPlayer);
+      if (playerEntry) {
+        const rank = leaderboard.findIndex(e => e.isCurrentPlayer) + 1;
+        const tierPlayers = leaderboard.filter(e => e.tier === playerEntry.tier);
+        const tierRank = tierPlayers.findIndex(e => e.isCurrentPlayer) + 1;
+
+        if (tierRank <= 3 && playerEntry.weeklyGems >= WEEKLY_MIN_QUALIFY) {
+          const trophy = {
+            week: ssData.weekStartDate,
+            tier: playerEntry.tier,
+            rank: tierRank,
+            gems: playerEntry.weeklyGems,
+          };
+          const existingTrophies = JSON.parse(localStorage.getItem('omTrophies') || '[]');
+          localStorage.setItem('omTrophies', JSON.stringify([...existingTrophies, trophy].slice(-20)));
+          setWeeklyTrophies([...weeklyTrophies, trophy].slice(-20));
+        }
+      }
+
+      // Reset for new week
+      const newStart = getTotalGems();
+      setWeeklyGemStart(newStart);
+      setWeekStartDate(currentWeekStart);
+      setWeeklyGems(0);
+      localStorage.setItem('omLeaderboard', JSON.stringify([]));
+      saveSuperstarsData({
+        weekStartDate: currentWeekStart,
+        weeklyGemStart: newStart,
+      });
+    } else if (!ssData.weekStartDate) {
+      // First time
+      const newStart = getTotalGems();
+      setWeeklyGemStart(newStart);
+      setWeekStartDate(currentWeekStart);
+      saveSuperstarsData({
+        weekStartDate: currentWeekStart,
+        weeklyGemStart: newStart,
+      });
+    } else {
+      // Same week — load existing
+      setWeeklyGemStart(ssData.weeklyGemStart || 0);
+      setWeekStartDate(ssData.weekStartDate || currentWeekStart);
+    }
+  };
 
   const saveProgress = (data) => {
     // Always preserve premium unlock — check backup key too
@@ -8884,42 +9038,275 @@ const handleDailyChallengeReplay = () => {
               
               {/* SUPERSTARS TAB CONTENT */}
               {gemsRewardsTab === 'superstars' && (
-                <div className="text-center py-8">
-                  <div className="text-6xl mb-4">🏆</div>
-                  <h3 className="text-2xl font-bold text-white mb-2">WEEKLY SUPERSTARS</h3>
-                  <p className="text-amber-300 text-sm mb-6">Leaderboard coming at launch!</p>
-                  
-                  <div className="bg-amber-900/20 rounded-lg p-6 mb-6 max-w-md mx-auto">
-                    <p className="text-slate-300 text-sm mb-4">
-                      Compete with players worldwide to earn the most gems each week!
-                    </p>
-                  </div>
-                  
-                  <div className="space-y-3 text-sm text-slate-300 mb-6 max-w-md mx-auto">
-                    <p className="flex items-center justify-center gap-3">
-                      <span className="text-lg">💎</span>
-                      <span>Compete for most weekly gems</span>
-                    </p>
-                    <p className="flex items-center justify-center gap-3">
-                      <span className="text-lg">🥇</span>
-                      <span>Top 3 get gold, silver, bronze</span>
-                    </p>
-                    <p className="flex items-center justify-center gap-3">
-                      <span className="text-lg">📅</span>
-                      <span>Resets every Monday</span>
-                    </p>
-                    <p className="flex items-center justify-center gap-3">
-                      <span className="text-lg">🏆</span>
-                      <span>See top 50 players worldwide</span>
-                    </p>
-                  </div>
-                  
-                  <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border-2 border-blue-500 max-w-md mx-auto">
-                    <p className="text-white font-semibold text-lg mb-2">YOUR STATS</p>
-                    <p className="text-slate-300">👤 {username}</p>
-                    <p className="text-slate-300 text-sm">🧩 {currentPuzzleIndex} puzzles completed</p>
-                    <p className="text-amber-300 font-semibold">💎 {triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent} total gems</p>
-                  </div>
+                <div className="space-y-4">
+
+                  {!superstarsOptedIn ? (
+                    /* OPT-IN SCREEN — Page 1 */
+                    <div className="py-2">
+                      <div className="text-center mb-4">
+                        <div className="text-5xl mb-2">🏆</div>
+                        <h3 className="text-2xl font-bold text-white mb-1">ONE MOVE SUPERSTARS</h3>
+                        <p className="text-slate-400 text-sm">Compete globally every week!</p>
+                      </div>
+
+                      {/* Tier info */}
+                      <div className="space-y-2 mb-4">
+                        <div className="rounded-lg p-3 border border-yellow-500 bg-yellow-900/30 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">🥇</span>
+                            <div className="text-left">
+                              <p className="font-bold text-sm text-yellow-400">Gold</p>
+                              <p className="text-slate-400 text-xs">2,501+ gems/week</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-white text-xs font-semibold">👑 Champion</p>
+                            <p className="text-slate-400 text-xs">#1 badge</p>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg p-3 border border-slate-400 bg-slate-700/30 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">🥈</span>
+                            <div className="text-left">
+                              <p className="font-bold text-sm text-slate-300">Silver</p>
+                              <p className="text-slate-400 text-xs">1,001–2,500 gems/week</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-white text-xs font-semibold">⭐ Contender</p>
+                            <p className="text-slate-400 text-xs">#2 badge</p>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg p-3 border border-amber-600 bg-amber-900/30 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">🥉</span>
+                            <div className="text-left">
+                              <p className="font-bold text-sm text-amber-600">Bronze</p>
+                              <p className="text-slate-400 text-xs">0–1,000 gems/week</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-white text-xs font-semibold">🛡️ Challenger</p>
+                            <p className="text-slate-400 text-xs">#3 badge</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* How It Works — expandable */}
+                      <div className="mb-4">
+                        <button
+                          onClick={() => setShowHowItWorks(!showHowItWorks)}
+                          className="w-full py-2.5 bg-slate-600 hover:bg-slate-500 text-white rounded-lg transition-all font-semibold text-sm flex items-center justify-center gap-2"
+                        >
+                          ℹ️ How It Works {showHowItWorks ? '▲' : '▼'}
+                        </button>
+                        {showHowItWorks && (
+                          <div className="mt-2 bg-slate-700/50 rounded-lg p-3 text-xs text-slate-300 space-y-1">
+                            <p>• Compete weekly — resets every Monday</p>
+                            <p>• Earn gems by playing to climb tiers</p>
+                            <p>• Top 3 in each tier earn special badges</p>
+                            <p>• Must earn 1,000+ gems to qualify</p>
+                            <p>• Badges displayed on the leaderboard</p>
+                            <p>• Your tier carries over week to week</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Join Button */}
+                      <button
+                        onClick={() => {
+                          setSuperstarsOptedIn(true);
+                          saveSuperstarsData({ optedIn: true });
+                          checkWeekReset();
+                        }}
+                        className="w-full py-4 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-white rounded-xl font-bold text-lg transition-all shadow-lg"
+                      >
+                        🏆 Join Superstars!
+                      </button>
+                    </div>
+
+                  ) : (
+                    /* LEADERBOARD SCREEN — Page 2 */
+                    <div>
+                      {/* Player Status Card */}
+                      {(() => {
+                        const currentWeekly = getCurrentWeeklyGems();
+                        const tier = getPlayerTier(currentWeekly);
+                        const qualified = currentWeekly >= WEEKLY_MIN_QUALIFY;
+                        const leaderboard = superstarsLeaderboard;
+                        const playerIdx = leaderboard.findIndex(e => e.isCurrentPlayer);
+                        const rank = playerIdx + 1;
+                        const tierPlayers = leaderboard.filter(e => e.tier === tier.name);
+                        const tierRank = tierPlayers.findIndex(e => e.isCurrentPlayer) + 1;
+
+                        return (
+                          <div className={`rounded-xl p-4 border-2 ${tier.border} ${tier.bg} mb-3`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-3xl">{tier.emoji}</span>
+                                <div>
+                                  <p className={`font-bold text-lg ${tier.color}`}>{tier.name} Tier</p>
+                                  <p className="text-slate-400 text-xs">
+                                    {SHOP_ICONS.find(i => i.id === selectedIcon)?.emoji || '👤'} {username}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-white font-bold text-xl">{currentWeekly.toLocaleString()}</p>
+                                <p className="text-slate-400 text-xs">gems this week</p>
+                              </div>
+                            </div>
+
+                            {/* Badge for top 3 in tier */}
+                            {qualified && tierRank >= 1 && tierRank <= 3 && (
+                              <div className={`rounded-lg p-2 text-center mt-2 ${
+                                tierRank === 1 ? 'bg-yellow-500/30 border border-yellow-400' :
+                                tierRank === 2 ? 'bg-slate-400/20 border border-slate-300' :
+                                'bg-amber-700/20 border border-amber-600'
+                              }`}>
+                                <p className="text-2xl mb-0.5">
+                                  {tierRank === 1 ? '👑' : tierRank === 2 ? '⭐' : '🛡️'}
+                                </p>
+                                <p className={`font-bold text-sm ${
+                                  tierRank === 1 ? 'text-yellow-400' :
+                                  tierRank === 2 ? 'text-slate-200' :
+                                  'text-amber-500'
+                                }`}>
+                                  #{tierRank} in {tier.name}
+                                  {tierRank === 1 ? ' — CHAMPION!' : tierRank === 2 ? ' — CONTENDER!' : ' — CHALLENGER!'}
+                                </p>
+                              </div>
+                            )}
+
+                            {!qualified && (
+                              <div className="bg-slate-700/50 rounded-lg p-2 mt-2">
+                                <p className="text-slate-400 text-xs text-center">
+                                  Need {(WEEKLY_MIN_QUALIFY - currentWeekly).toLocaleString()} more gems to qualify for prizes
+                                </p>
+                                <div className="w-full bg-slate-600 rounded-full h-1.5 mt-1">
+                                  <div
+                                    className="bg-yellow-400 h-1.5 rounded-full transition-all"
+                                    style={{width: `${Math.min(100, (currentWeekly / WEEKLY_MIN_QUALIFY) * 100)}%`}}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Weekly Trophies */}
+                      {weeklyTrophies.length > 0 && (
+                        <div className="bg-slate-700/50 rounded-xl p-3 mb-3">
+                          <p className="text-white font-bold text-sm mb-2">🏆 Your Trophy Case</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {weeklyTrophies.slice(-6).reverse().map((trophy, idx) => (
+                              <div key={idx} className={`rounded-lg p-2 text-center border ${
+                                trophy.tier === 'Gold' ? 'border-yellow-500 bg-yellow-900/30' :
+                                trophy.tier === 'Silver' ? 'border-slate-400 bg-slate-700/30' :
+                                'border-amber-600 bg-amber-900/30'
+                              }`}>
+                                <p className="text-xl">{trophy.rank === 1 ? '👑' : trophy.rank === 2 ? '⭐' : '🛡️'}</p>
+                                <p className="text-white text-xs font-bold">#{trophy.rank}</p>
+                                <p className="text-slate-400 text-xs">{trophy.tier}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Leaderboard */}
+                      <div className="bg-slate-700/50 rounded-xl p-3">
+                        <p className="text-white font-bold text-sm mb-3">🌍 Global Leaderboard</p>
+                        {superstarsLeaderboard.length === 0 ? (
+                          <div className="text-center py-6">
+                            <p className="text-slate-400 text-sm">No players yet this week!</p>
+                            <p className="text-slate-500 text-xs mt-1">Be the first to earn gems</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {superstarsLeaderboard.slice(0, 20).map((player, idx) => {
+                              const rank = idx + 1;
+                              const pTier = getPlayerTier(player.weeklyGems);
+                              const isMe = player.isCurrentPlayer;
+                              const tierRankInTier = superstarsLeaderboard
+                                .filter(p => p.tier === player.tier)
+                                .findIndex(p => p.username === player.username) + 1;
+                              const showBadge = tierRankInTier <= 3 && player.weeklyGems >= WEEKLY_MIN_QUALIFY;
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`rounded-lg p-3 flex items-center justify-between border ${
+                                    isMe ? `${pTier.border} ${pTier.bg} border-2` : 'border-slate-600 bg-slate-800/50'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    {/* Rank */}
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                                      rank === 1 ? 'bg-yellow-500 text-black' :
+                                      rank === 2 ? 'bg-slate-400 text-black' :
+                                      rank === 3 ? 'bg-amber-600 text-white' :
+                                      'bg-slate-700 text-slate-300'
+                                    }`}>
+                                      {rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank}
+                                    </div>
+
+                                    {/* Player info */}
+                                    <div>
+                                      <div className="flex items-center gap-1">
+                                        <p className={`text-sm font-semibold ${isMe ? 'text-white' : 'text-slate-200'}`}>
+                                          {SHOP_ICONS.find(i => i.id === player.icon)?.emoji || '👤'} {player.username}
+                                          {isMe && <span className="text-xs text-blue-400 ml-1">(you)</span>}
+                                        </p>
+                                        {/* Badge for top 3 in tier */}
+                                        {showBadge && (
+                                          <span className={`text-lg ${
+                                            tierRankInTier === 1 ? 'animate-pulse' : ''
+                                          }`}>
+                                            {tierRankInTier === 1 ? '👑' : tierRankInTier === 2 ? '⭐' : '🛡️'}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className={`text-xs ${pTier.color}`}>{pTier.emoji} {pTier.name}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Weekly gems */}
+                                  <div className="text-right">
+                                    <p className="text-amber-300 font-bold text-sm">{player.weeklyGems.toLocaleString()} 💎</p>
+                                    {!player.weeklyGems >= WEEKLY_MIN_QUALIFY && (
+                                      <p className="text-slate-500 text-xs">not qualified</p>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Week reset info */}
+                      <div className="text-center mt-3">
+                        <p className="text-slate-500 text-xs">
+                          Week resets every Monday • Showing {superstarsLeaderboard.length} active player{superstarsLeaderboard.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+
+                      {/* Leave Superstars Button */}
+                      <button
+                        onClick={() => {
+                          setSuperstarsOptedIn(false);
+                          saveSuperstarsData({ optedIn: false });
+                        }}
+                        className="w-full mt-4 py-3 bg-slate-700 hover:bg-red-900/50 border border-slate-600 hover:border-red-500 text-slate-300 hover:text-red-300 rounded-xl font-semibold text-sm transition-all"
+                      >
+                        🚪 Leave Superstars
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               
