@@ -10202,76 +10202,61 @@ const handleDailyChallengeReplay = () => {
             </div>
           </div>
           
-          {/* Superstars Banner */}
-          <button
-            onClick={() => {
-              setShowGemsAndRewards(true);
-              setGemsRewardsTab('superstars');
-            }}
-            className="w-full mb-3 px-8 py-4 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-white rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105"
-          >
-            <div className="flex items-center justify-center gap-3">
-              <span className="text-3xl">⭐</span>
-              <div className="text-left">
-                <p className="text-xl font-bold tracking-wide">SUPERSTARS</p>
-                <p className="text-sm text-yellow-50">Compete weekly — see where you rank!</p>
-              </div>
-            </div>
-          </button>
+          {/* Dashboard Cards — Superstars + Daily Challenge side by side */}
+          <div className="w-full mb-3 grid grid-cols-2 gap-3">
 
-          {/* Daily Challenge Banner */}
-          {!dailyChallengeCompleted && !dailyChallengeFailed && (
+            {/* Superstars Card */}
             <button
-              onClick={startDailyChallenge}
-              className="w-full mb-3 px-8 py-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105"
+              onClick={() => {
+                setShowGemsAndRewards(true);
+                setGemsRewardsTab('superstars');
+              }}
+              className="px-4 py-5 bg-gradient-to-br from-amber-600 to-orange-700 hover:from-amber-500 hover:to-orange-600 text-white rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105 flex flex-col items-center justify-center text-center gap-2 min-h-[140px]"
             >
-              <div className="flex items-center justify-center gap-3">
-                <span className="text-2xl">🏆</span>
-                <div className="text-left">
-                  <p className="text-xl font-bold">
-                    {dailyChallengeInProgress ? 'RESUME DAILY CHALLENGE' : 'DAILY CHALLENGE'}
-                  </p>
-                  <p className="text-sm text-red-100">
-                    {dailyChallengeInProgress 
-                      ? `${savedDailyChallengeState?.puzzleType?.replace('_', ' ') || 'Puzzle'} - Continue where you left off` 
-                      : 'Win 500 Gems!'}
-                  </p>
-                </div>
-              </div>
+              <span className="text-4xl">⭐</span>
+              <p className="text-lg font-bold tracking-wide leading-tight">SUPERSTARS</p>
+              <p className="text-xs text-amber-50 leading-tight">Compete weekly — see where you rank!</p>
             </button>
-          )}
-          
-          {/* Daily Challenge Failed */}
-          {dailyChallengeFailed && !dailyChallengeCompleted && (
-            <div className="w-full mb-3">
-              <div className="px-8 py-4 bg-gradient-to-r from-orange-600 to-orange-700 rounded-lg shadow-lg">
-                <div className="flex items-center justify-center gap-3">
-                  <span className="text-2xl">💪</span>
-                  <div className="text-left">
-                    <p className="text-xl font-bold text-white">Try Again Tomorrow!</p>
-                    <p className="text-sm text-orange-100">Resets at midnight</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Daily Challenge Completed - Also add reset button */}
-          {dailyChallengeCompleted && (
-            <div className="w-full mb-3">
-              <div className="px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 rounded-lg shadow-lg">
-                <div className="flex items-center justify-center gap-3">
-                  <span className="text-2xl">✅</span>
-                  <div className="text-left">
-                    <p className="text-xl font-bold text-white">DAILY CHALLENGE COMPLETE!</p>
-                    <p className="text-sm text-green-100">Come back tomorrow</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* Spin Wheel Button — appears right below Daily Challenge when eligible */}
+            {/* Daily Challenge Card */}
+            {!dailyChallengeCompleted && !dailyChallengeFailed && (
+              <button
+                onClick={startDailyChallenge}
+                className="px-4 py-5 bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105 flex flex-col items-center justify-center text-center gap-2 min-h-[140px]"
+              >
+                <span className="text-4xl">🏆</span>
+                <p className="text-lg font-bold leading-tight">
+                  {dailyChallengeInProgress ? 'RESUME CHALLENGE' : 'DAILY CHALLENGE'}
+                </p>
+                <p className="text-xs text-red-100 leading-tight">
+                  {dailyChallengeInProgress
+                    ? `${savedDailyChallengeState?.puzzleType?.replace('_', ' ') || 'Puzzle'} - Continue`
+                    : 'Win 500 Gems!'}
+                </p>
+              </button>
+            )}
+
+            {/* Daily Challenge Failed */}
+            {dailyChallengeFailed && !dailyChallengeCompleted && (
+              <div className="px-4 py-5 bg-gradient-to-br from-orange-600 to-orange-700 rounded-lg shadow-lg flex flex-col items-center justify-center text-center gap-2 min-h-[140px]">
+                <span className="text-4xl">💪</span>
+                <p className="text-lg font-bold text-white leading-tight">Try Again Tomorrow!</p>
+                <p className="text-xs text-orange-100 leading-tight">Resets at midnight</p>
+              </div>
+            )}
+
+            {/* Daily Challenge Completed */}
+            {dailyChallengeCompleted && (
+              <div className="px-4 py-5 bg-gradient-to-br from-green-600 to-green-700 rounded-lg shadow-lg flex flex-col items-center justify-center text-center gap-2 min-h-[140px]">
+                <span className="text-4xl">✅</span>
+                <p className="text-lg font-bold text-white leading-tight">CHALLENGE COMPLETE!</p>
+                <p className="text-xs text-green-100 leading-tight">Come back tomorrow</p>
+              </div>
+            )}
+
+          </div>
+
+          {/* Spin Wheel Button — appears below the dashboard cards when eligible */}
           {spinAvailable && (
             <button
               onClick={() => setShowSpinWheel(true)}
