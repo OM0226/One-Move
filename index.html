@@ -9161,9 +9161,30 @@ const handleDailyChallengeReplay = () => {
                       {/* Join Button */}
                       <button
                         onClick={() => {
+                          // Get current total gems directly from localStorage
+                          const savedData = JSON.parse(localStorage.getItem('oneMoveSave_v4') || '{}');
+                          const currentTotal = (savedData.triviaScore || 0) +
+                            (savedData.puzzleScore || 0) +
+                            (savedData.dailyChallengeGems || 0) +
+                            (savedData.bonusGems || 0) -
+                            (savedData.gemsSpent || 0);
+
+                          const currentWeekStart = getWeekStartDate();
+
+                          // Set baseline — weekly gems start at 0 from this moment
+                          setWeeklyGemStart(currentTotal);
+                          setWeeklyGems(0);
+                          setWeekStartDate(currentWeekStart);
                           setSuperstarsOptedIn(true);
-                          saveSuperstarsData({ optedIn: true });
-                          checkWeekReset();
+                          setSuperstarsLeaderboard([]);
+                          localStorage.setItem('omLeaderboard', JSON.stringify([]));
+
+                          saveSuperstarsData({
+                            optedIn: true,
+                            weekStartDate: currentWeekStart,
+                            weeklyGemStart: currentTotal,
+                            lastWeekTier: 'Bronze',
+                          });
                         }}
                         className="w-full py-4 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-white rounded-xl font-bold text-lg transition-all shadow-lg"
                       >
@@ -9349,8 +9370,21 @@ const handleDailyChallengeReplay = () => {
                       {/* Leave Superstars Button */}
                       <button
                         onClick={() => {
+                          // Wipe all Superstars data cleanly
                           setSuperstarsOptedIn(false);
-                          saveSuperstarsData({ optedIn: false });
+                          setWeeklyGems(0);
+                          setWeeklyGemStart(0);
+                          setWeekStartDate('');
+                          setSuperstarsLeaderboard([]);
+                          setPlayerWeeklyRank(null);
+                          setPlayerTier('');
+                          localStorage.setItem('omLeaderboard', JSON.stringify([]));
+                          saveSuperstarsData({
+                            optedIn: false,
+                            weekStartDate: '',
+                            weeklyGemStart: 0,
+                            lastWeekTier: 'Bronze',
+                          });
                         }}
                         className="w-full mt-4 py-3 bg-slate-700 hover:bg-red-900/50 border border-slate-600 hover:border-red-500 text-slate-300 hover:text-red-300 rounded-xl font-semibold text-sm transition-all"
                       >
