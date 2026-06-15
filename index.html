@@ -3551,8 +3551,9 @@ const OneMove = () => {
   const getWeekStartDate = () => {
     const now = new Date();
     const day = now.getDay(); // 0=Sun, 1=Mon...
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
-    const monday = new Date(now.setDate(diff));
+    const diff = day === 0 ? -6 : 1 - day; // days to subtract to get to Monday
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diff);
     return monday.toISOString().split('T')[0];
   };
 
@@ -3586,7 +3587,12 @@ const OneMove = () => {
 
   const getTotalGems = () => triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
 
-  const getCurrentWeeklyGems = () => Math.max(0, getTotalGems() - weeklyGemStart);
+  const getCurrentWeeklyGems = () => {
+    const total = getTotalGems();
+    const ssData = loadSuperstarsData();
+    const baseline = ssData.weeklyGemStart || weeklyGemStart || 0;
+    return Math.max(0, total - baseline);
+  };
 
   const saveSuperstarsData = (data) => {
     const existing = JSON.parse(localStorage.getItem('omSuperstars') || '{}');
@@ -3630,23 +3636,29 @@ const OneMove = () => {
     const currentWeekStart = getWeekStartDate();
     const ssData = loadSuperstarsData();
 
+    // Get total gems directly from localStorage — don't rely on React state
+    const savedData = JSON.parse(localStorage.getItem('oneMoveSave_v4') || '{}');
+    const totalGemsFromStorage = (savedData.triviaScore || 0) + 
+      (savedData.puzzleScore || 0) + 
+      (savedData.dailyChallengeGems || 0) + 
+      (savedData.bonusGems || 0) - 
+      (savedData.gemsSpent || 0);
+
     if (ssData.weekStartDate && ssData.weekStartDate !== currentWeekStart) {
       // New week! Save last week's results as trophy if top 3
       const leaderboard = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
       const playerEntry = leaderboard.find(e => e.isCurrentPlayer);
 
-      // Determine last week's actual tier — this becomes the grace tier for the new week
-      const lastWeeklyGems = playerEntry ? playerEntry.weeklyGems : getCurrentWeeklyGems();
+      // Determine last week's actual tier for grace period
+      const lastWeeklyGems = playerEntry ? playerEntry.weeklyGems : 0;
       const lastWeekActualTier = getPlayerTier(lastWeeklyGems);
-      // Grace only lasts one week — store THIS week's actual tier as next week's grace floor
       const newLastWeekTier = lastWeekActualTier.name;
 
       if (playerEntry) {
-        const rank = leaderboard.findIndex(e => e.isCurrentPlayer) + 1;
         const tierPlayers = leaderboard.filter(e => e.tier === playerEntry.tier);
         const tierRank = tierPlayers.findIndex(e => e.isCurrentPlayer) + 1;
 
-        if (tierRank <= 3 && playerEntry.weeklyGems >= WEEKLY_MIN_QUALIFY) {
+        if (tierRank <= 3) {
           const trophy = {
             week: ssData.weekStartDate,
             tier: playerEntry.tier,
@@ -3655,32 +3667,34 @@ const OneMove = () => {
           };
           const existingTrophies = JSON.parse(localStorage.getItem('omTrophies') || '[]');
           localStorage.setItem('omTrophies', JSON.stringify([...existingTrophies, trophy].slice(-20)));
-          setWeeklyTrophies([...weeklyTrophies, trophy].slice(-20));
+          setWeeklyTrophies(prev => [...prev, trophy].slice(-20));
         }
       }
 
-      // Reset for new week
-      const newStart = getTotalGems();
-      setWeeklyGemStart(newStart);
+      // Reset for new week — use localStorage total, not React state
+      setWeeklyGemStart(totalGemsFromStorage);
       setWeekStartDate(currentWeekStart);
       setWeeklyGems(0);
       localStorage.setItem('omLeaderboard', JSON.stringify([]));
+      setSuperstarsLeaderboard([]);
       saveSuperstarsData({
         weekStartDate: currentWeekStart,
-        weeklyGemStart: newStart,
+        weeklyGemStart: totalGemsFromStorage,
         lastWeekTier: newLastWeekTier,
       });
+
     } else if (!ssData.weekStartDate) {
-      // First time
-      const newStart = getTotalGems();
-      setWeeklyGemStart(newStart);
+      // First time joining — capture current total as baseline
+      setWeeklyGemStart(totalGemsFromStorage);
       setWeekStartDate(currentWeekStart);
+      setWeeklyGems(0);
       saveSuperstarsData({
         weekStartDate: currentWeekStart,
-        weeklyGemStart: newStart,
+        weeklyGemStart: totalGemsFromStorage,
       });
+
     } else {
-      // Same week — load existing
+      // Same week — load existing baseline
       setWeeklyGemStart(ssData.weeklyGemStart || 0);
       setWeekStartDate(ssData.weekStartDate || currentWeekStart);
     }
