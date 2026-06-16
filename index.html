@@ -9302,60 +9302,107 @@ const handleDailyChallengeReplay = () => {
                           </div>
                         ) : (
                           <div className="space-y-2">
-                            {superstarsLeaderboard.slice(0, 20).map((player, idx) => {
-                              const rank = idx + 1;
-                              const pTier = getPlayerTier(player.weeklyGems);
-                              const isMe = player.isCurrentPlayer;
-                              const tierRankInTier = superstarsLeaderboard
-                                .filter(p => p.tier === player.tier)
-                                .findIndex(p => p.username === player.username) + 1;
-                              const showBadge = tierRankInTier <= 3 && player.weeklyGems >= WEEKLY_MIN_QUALIFY;
+                            {(() => {
+                              const top50 = superstarsLeaderboard.slice(0, 50);
+                              const playerGlobalRank = superstarsLeaderboard.findIndex(e => e.isCurrentPlayer) + 1;
+                              const playerInTop50 = playerGlobalRank <= 50;
+                              const playerEntry = superstarsLeaderboard.find(e => e.isCurrentPlayer);
 
                               return (
-                                <div
-                                  key={idx}
-                                  className={`rounded-lg p-3 flex items-center justify-between border ${
-                                    isMe ? `${pTier.border} ${pTier.bg} border-2` : 'border-slate-600 bg-slate-800/50'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {/* Rank */}
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                                      rank === 1 ? 'bg-yellow-500 text-black' :
-                                      rank === 2 ? 'bg-slate-400 text-black' :
-                                      rank === 3 ? 'bg-amber-600 text-white' :
-                                      'bg-slate-700 text-slate-300'
-                                    }`}>
-                                      {rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank}
-                                    </div>
+                                <>
+                                  {top50.map((player, idx) => {
+                                    const rank = idx + 1;
+                                    const pTier = getPlayerTier(player.weeklyGems);
+                                    const isMe = player.isCurrentPlayer;
+                                    const tierRankInTier = superstarsLeaderboard
+                                      .filter(p => p.tier === player.tier)
+                                      .findIndex(p => p.username === player.username) + 1;
+                                    const showBadge = tierRankInTier <= 3;
 
-                                    {/* Player info */}
-                                    <div>
-                                      <div className="flex items-center gap-1">
-                                        <p className={`text-sm font-semibold ${isMe ? 'text-white' : 'text-slate-200'}`}>
-                                          {SHOP_ICONS.find(i => i.id === player.icon)?.emoji || '👤'} {player.username}
-                                          {isMe && <span className="text-xs text-blue-400 ml-1">(you)</span>}
-                                        </p>
-                                        {/* Badge for top 3 in tier */}
-                                        {showBadge && (
-                                          <span className={`text-lg ${
-                                            tierRankInTier === 1 ? 'animate-pulse' : ''
+                                    return (
+                                      <div
+                                        key={idx}
+                                        className={`rounded-lg p-3 flex items-center justify-between border ${
+                                          isMe ? `${pTier.border} ${pTier.bg} border-2` : 'border-slate-600 bg-slate-800/50'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                                            rank === 1 ? 'bg-yellow-500 text-black' :
+                                            rank === 2 ? 'bg-slate-400 text-black' :
+                                            rank === 3 ? 'bg-amber-600 text-white' :
+                                            'bg-slate-700 text-slate-300'
                                           }`}>
-                                            {tierRankInTier === 1 ? '👑' : tierRankInTier === 2 ? '⭐' : '🛡️'}
-                                          </span>
-                                        )}
+                                            {rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank}
+                                          </div>
+                                          <div>
+                                            <div className="flex items-center gap-1">
+                                              <p className={`text-sm font-semibold ${isMe ? 'text-white' : 'text-slate-200'}`}>
+                                                {SHOP_ICONS.find(i => i.id === player.icon)?.emoji || '👤'} {player.username}
+                                                {isMe && <span className="text-xs text-blue-400 ml-1">(you)</span>}
+                                              </p>
+                                              {showBadge && (
+                                                <span className={`text-lg ${tierRankInTier === 1 ? 'animate-pulse' : ''}`}>
+                                                  {tierRankInTier === 1 ? '👑' : tierRankInTier === 2 ? '⭐' : '🛡️'}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <p className={`text-xs ${pTier.color}`}>{pTier.emoji} {pTier.name}</p>
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <p className="text-amber-300 font-bold text-sm">{player.weeklyGems.toLocaleString()} 💎</p>
+                                        </div>
                                       </div>
-                                      <p className={`text-xs ${pTier.color}`}>{pTier.emoji} {pTier.name}</p>
-                                    </div>
-                                  </div>
+                                    );
+                                  })}
 
-                                  {/* Weekly gems */}
-                                  <div className="text-right">
-                                    <p className="text-amber-300 font-bold text-sm">{player.weeklyGems.toLocaleString()} 💎</p>
-                                  </div>
-                                </div>
+                                  {/* Player's own rank if outside top 50 */}
+                                  {!playerInTop50 && playerEntry && (
+                                    <>
+                                      <div className="flex items-center gap-2 py-1">
+                                        <div className="flex-1 border-t border-slate-600" />
+                                        <p className="text-slate-500 text-xs">• • •</p>
+                                        <div className="flex-1 border-t border-slate-600" />
+                                      </div>
+                                      {(() => {
+                                        const pTier = getPlayerTier(playerEntry.weeklyGems);
+                                        const tierRankInTier = superstarsLeaderboard
+                                          .filter(p => p.tier === playerEntry.tier)
+                                          .findIndex(p => p.isCurrentPlayer) + 1;
+                                        const showBadge = tierRankInTier <= 3;
+                                        return (
+                                          <div className={`rounded-lg p-3 flex items-center justify-between border-2 ${pTier.border} ${pTier.bg}`}>
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-slate-700 text-slate-300">
+                                                {playerGlobalRank}
+                                              </div>
+                                              <div>
+                                                <div className="flex items-center gap-1">
+                                                  <p className="text-sm font-semibold text-white">
+                                                    {SHOP_ICONS.find(i => i.id === playerEntry.icon)?.emoji || '👤'} {playerEntry.username}
+                                                    <span className="text-xs text-blue-400 ml-1">(you)</span>
+                                                  </p>
+                                                  {showBadge && (
+                                                    <span className="text-lg">
+                                                      {tierRankInTier === 1 ? '👑' : tierRankInTier === 2 ? '⭐' : '🛡️'}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                <p className={`text-xs ${pTier.color}`}>{pTier.emoji} {pTier.name}</p>
+                                              </div>
+                                            </div>
+                                            <div className="text-right">
+                                              <p className="text-amber-300 font-bold text-sm">{playerEntry.weeklyGems.toLocaleString()} 💎</p>
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
+                                    </>
+                                  )}
+                                </>
                               );
-                            })}
+                            })()}
                           </div>
                         )}
                       </div>
