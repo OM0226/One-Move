@@ -9239,7 +9239,8 @@ const handleDailyChallengeReplay = () => {
                         disabled={playStreakShields + qty > 3}
                         className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${playStreakShields + qty > 3 ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
                       >
-                        {qty === 1 ? '1 Day' : qty === 2 ? '2 Days' : '3 Days'}<br/>{qty * 250} 💎
+                        <span>{qty === 1 ? '1 Day' : qty === 2 ? '2 Days' : '3 Days'}</span>
+                        <span>{qty * 250} 💎</span>
                       </button>
                     ))}
                   </div>
