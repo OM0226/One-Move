@@ -3517,27 +3517,9 @@ const OneMove = () => {
     return () => clearTimeout(timer);
   }, [pendingQMAdvance]);
 
-  // Load Superstars data — runs after all functions are defined
-  useEffect(() => {
-    const ssData = loadSuperstarsData();
-    if (ssData.optedIn) {
-      setSuperstarsOptedIn(true);
-      checkWeekReset();
-      const trophies = JSON.parse(localStorage.getItem('omTrophies') || '[]');
-      setWeeklyTrophies(trophies);
-      const leaderboard = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
-      setSuperstarsLeaderboard(leaderboard);
-    }
-  }, []);
+  // Superstars data loading — placeholder
 
-  // Update weekly gems and leaderboard whenever gems change
-  useEffect(() => {
-    if (superstarsOptedIn && weekStartDate) {
-      const currentWeekly = getCurrentWeeklyGems();
-      setWeeklyGems(currentWeekly);
-      updateLeaderboard(currentWeekly);
-    }
-  }, [triviaScore, puzzleScore, dailyChallengeGems, bonusGems, gemsSpent, superstarsOptedIn]);
+  // Superstars weekly gems update — placeholder
 
   // Splash screen timer — go straight to home, no intermediate screen needed
   useEffect(() => {
