@@ -3143,28 +3143,6 @@ const OneMove = () => {
   const [mathSelectedAnswer, setMathSelectedAnswer] = useState(null);
   const [bonusGems, setBonusGems] = useState(0);
   const [lastAwardedLevel, setLastAwardedLevel] = useState('');
-
-  // ============================================================
-  // SUPERSTARS STATE
-  // ============================================================
-  const [superstarsOptedIn, setSuperstarsOptedIn] = useState(false);
-  const [weeklyGems, setWeeklyGems] = useState(0);
-  const [weeklyGemStart, setWeeklyGemStart] = useState(0); // gems at start of week
-  const [weekStartDate, setWeekStartDate] = useState('');
-  const [superstarsLeaderboard, setSuperstarsLeaderboard] = useState([]);
-  const [playerWeeklyRank, setPlayerWeeklyRank] = useState(null);
-  const [playerTier, setPlayerTier] = useState('');
-  const [weeklyTrophies, setWeeklyTrophies] = useState([]); // array of past week trophies
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
-
-  // Tier thresholds
-  const SUPERSTAR_TIERS = {
-    BRONZE: { name: 'Bronze', min: 0, max: 2500, emoji: '🥉', color: 'text-amber-600', bg: 'bg-amber-900/30', border: 'border-amber-600' },
-    SILVER: { name: 'Silver', min: 2501, max: 7500, emoji: '🥈', color: 'text-slate-300', bg: 'bg-slate-700/30', border: 'border-slate-400' },
-    GOLD: { name: 'Gold', min: 7501, max: 999999, emoji: '🥇', color: 'text-yellow-400', bg: 'bg-yellow-900/30', border: 'border-yellow-500' },
-  };
-
-  const WEEKLY_MIN_QUALIFY = 0; // no minimum - everyone is eligible
   const [spinAvailable, setSpinAvailable] = useState(false);
   const [showSpinWheel, setShowSpinWheel] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -3517,172 +3495,12 @@ const OneMove = () => {
     return () => clearTimeout(timer);
   }, [pendingQMAdvance]);
 
-  // Superstars data loading — placeholder
-
-  // Superstars weekly gems update — placeholder
-
   // Splash screen timer — go straight to home, no intermediate screen needed
   useEffect(() => {
     if (screen === 'splash') {
       setScreen('home');
     }
   }, [screen]);
-
-  // ============================================================
-  // SUPERSTARS HELPER FUNCTIONS
-  // ============================================================
-
-  const getWeekStartDate = () => {
-    const now = new Date();
-    const day = now.getDay(); // 0=Sun, 1=Mon...
-    const diff = day === 0 ? -6 : 1 - day; // days to subtract to get to Monday
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + diff);
-    return monday.toISOString().split('T')[0];
-  };
-
-  const getPlayerTier = (gems) => {
-    if (gems >= 7501) return SUPERSTAR_TIERS.GOLD;
-    if (gems >= 2501) return SUPERSTAR_TIERS.SILVER;
-    return SUPERSTAR_TIERS.BRONZE;
-  };
-
-  // Tier ranking for comparison: Bronze=1, Silver=2, Gold=3
-  const getTierRank = (tierName) => {
-    if (tierName === 'Gold') return 3;
-    if (tierName === 'Silver') return 2;
-    return 1;
-  };
-
-  const rankToTierObj = (rank) => {
-    if (rank >= 3) return SUPERSTAR_TIERS.GOLD;
-    if (rank >= 2) return SUPERSTAR_TIERS.SILVER;
-    return SUPERSTAR_TIERS.BRONZE;
-  };
-
-  // Displayed tier = higher of (last week's final tier, this week's current tier)
-  const getDisplayedTier = (currentWeeklyGemsVal) => {
-    const currentTier = getPlayerTier(currentWeeklyGemsVal);
-    const ssData = loadSuperstarsData();
-    const lastWeekTier = ssData.lastWeekTier || 'Bronze';
-    const higherRank = Math.max(getTierRank(currentTier.name), getTierRank(lastWeekTier));
-    return rankToTierObj(higherRank);
-  };
-
-  const getTotalGems = () => triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent;
-
-  const getCurrentWeeklyGems = () => {
-    const total = getTotalGems();
-    const ssData = loadSuperstarsData();
-    const baseline = ssData.weeklyGemStart || weeklyGemStart || 0;
-    return Math.max(0, total - baseline);
-  };
-
-  const saveSuperstarsData = (data) => {
-    const existing = JSON.parse(localStorage.getItem('omSuperstars') || '{}');
-    localStorage.setItem('omSuperstars', JSON.stringify({ ...existing, ...data }));
-  };
-
-  const loadSuperstarsData = () => {
-    return JSON.parse(localStorage.getItem('omSuperstars') || '{}');
-  };
-
-  const updateLeaderboard = (playerWeeklyGemsTotal) => {
-    const existing = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
-    const playerEntry = {
-      username: username || 'Player',
-      icon: selectedIcon || 'default',
-      weeklyGems: playerWeeklyGemsTotal,
-      tier: getPlayerTier(playerWeeklyGemsTotal).name,
-      updatedAt: new Date().toISOString(),
-      isCurrentPlayer: true,
-    };
-
-    // Remove existing entry for this player
-    const filtered = existing.filter(e => !e.isCurrentPlayer);
-    // Add updated entry and sort
-    const updated = [...filtered, playerEntry]
-      .sort((a, b) => b.weeklyGems - a.weeklyGems)
-      .slice(0, 100); // Keep top 100
-
-    localStorage.setItem('omLeaderboard', JSON.stringify(updated));
-
-    // Find rank
-    const rank = updated.findIndex(e => e.isCurrentPlayer) + 1;
-    setPlayerWeeklyRank(rank);
-    setSuperstarsLeaderboard(updated);
-    setPlayerTier(getPlayerTier(playerWeeklyGemsTotal).name);
-
-    return rank;
-  };
-
-  const checkWeekReset = () => {
-    const currentWeekStart = getWeekStartDate();
-    const ssData = loadSuperstarsData();
-
-    // Get total gems directly from localStorage — don't rely on React state
-    const savedData = JSON.parse(localStorage.getItem('oneMoveSave_v4') || '{}');
-    const totalGemsFromStorage = (savedData.triviaScore || 0) + 
-      (savedData.puzzleScore || 0) + 
-      (savedData.dailyChallengeGems || 0) + 
-      (savedData.bonusGems || 0) - 
-      (savedData.gemsSpent || 0);
-
-    if (ssData.weekStartDate && ssData.weekStartDate !== currentWeekStart) {
-      // New week! Save last week's results as trophy if top 3
-      const leaderboard = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
-      const playerEntry = leaderboard.find(e => e.isCurrentPlayer);
-
-      // Determine last week's actual tier for grace period
-      const lastWeeklyGems = playerEntry ? playerEntry.weeklyGems : 0;
-      const lastWeekActualTier = getPlayerTier(lastWeeklyGems);
-      const newLastWeekTier = lastWeekActualTier.name;
-
-      if (playerEntry) {
-        const tierPlayers = leaderboard.filter(e => e.tier === playerEntry.tier);
-        const tierRank = tierPlayers.findIndex(e => e.isCurrentPlayer) + 1;
-
-        if (tierRank <= 3) {
-          const trophy = {
-            week: ssData.weekStartDate,
-            tier: playerEntry.tier,
-            rank: tierRank,
-            gems: playerEntry.weeklyGems,
-          };
-          const existingTrophies = JSON.parse(localStorage.getItem('omTrophies') || '[]');
-          localStorage.setItem('omTrophies', JSON.stringify([...existingTrophies, trophy].slice(-20)));
-          setWeeklyTrophies(prev => [...prev, trophy].slice(-20));
-        }
-      }
-
-      // Reset for new week — use localStorage total, not React state
-      setWeeklyGemStart(totalGemsFromStorage);
-      setWeekStartDate(currentWeekStart);
-      setWeeklyGems(0);
-      localStorage.setItem('omLeaderboard', JSON.stringify([]));
-      setSuperstarsLeaderboard([]);
-      saveSuperstarsData({
-        weekStartDate: currentWeekStart,
-        weeklyGemStart: totalGemsFromStorage,
-        lastWeekTier: newLastWeekTier,
-      });
-
-    } else if (!ssData.weekStartDate) {
-      // First time joining — capture current total as baseline
-      setWeeklyGemStart(totalGemsFromStorage);
-      setWeekStartDate(currentWeekStart);
-      setWeeklyGems(0);
-      saveSuperstarsData({
-        weekStartDate: currentWeekStart,
-        weeklyGemStart: totalGemsFromStorage,
-      });
-
-    } else {
-      // Same week — load existing baseline
-      setWeeklyGemStart(ssData.weeklyGemStart || 0);
-      setWeekStartDate(ssData.weekStartDate || currentWeekStart);
-    }
-  };
 
   const saveProgress = (data) => {
     // Always preserve premium unlock — check backup key too
@@ -9068,11 +8886,44 @@ const handleDailyChallengeReplay = () => {
               {gemsRewardsTab === 'superstars' && (
                 <div className="text-center py-8">
                   <div className="text-6xl mb-4">🏆</div>
-                  <h3 className="text-2xl font-bold text-white mb-2">ONE MOVE SUPERSTARS</h3>
-                  <p className="text-amber-300 text-sm mb-4">Coming Soon!</p>
-                  <p className="text-slate-400 text-sm">Weekly competitive leaderboard launching soon. Compete globally and earn badges!</p>
+                  <h3 className="text-2xl font-bold text-white mb-2">WEEKLY SUPERSTARS</h3>
+                  <p className="text-amber-300 text-sm mb-6">Leaderboard coming at launch!</p>
+                  
+                  <div className="bg-amber-900/20 rounded-lg p-6 mb-6 max-w-md mx-auto">
+                    <p className="text-slate-300 text-sm mb-4">
+                      Compete with players worldwide to earn the most gems each week!
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-3 text-sm text-slate-300 mb-6 max-w-md mx-auto">
+                    <p className="flex items-center justify-center gap-3">
+                      <span className="text-lg">💎</span>
+                      <span>Compete for most weekly gems</span>
+                    </p>
+                    <p className="flex items-center justify-center gap-3">
+                      <span className="text-lg">🥇</span>
+                      <span>Top 3 get gold, silver, bronze</span>
+                    </p>
+                    <p className="flex items-center justify-center gap-3">
+                      <span className="text-lg">📅</span>
+                      <span>Resets every Monday</span>
+                    </p>
+                    <p className="flex items-center justify-center gap-3">
+                      <span className="text-lg">🏆</span>
+                      <span>See top 50 players worldwide</span>
+                    </p>
+                  </div>
+                  
+                  <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border-2 border-blue-500 max-w-md mx-auto">
+                    <p className="text-white font-semibold text-lg mb-2">YOUR STATS</p>
+                    <p className="text-slate-300">👤 {username}</p>
+                    <p className="text-slate-300 text-sm">🧩 {currentPuzzleIndex} puzzles completed</p>
+                    <p className="text-amber-300 font-semibold">💎 {triviaScore + puzzleScore + dailyChallengeGems + bonusGems - gemsSpent} total gems</p>
+                  </div>
                 </div>
               )}
+              
+              </div>
               <button
                 onClick={() => setShowGemsAndRewards(false)}
                 className="w-full mt-6 flex-shrink-0 px-8 py-3 bg-slate-600 hover:bg-slate-500 text-white rounded-lg transition-all duration-300"
@@ -9239,8 +9090,7 @@ const handleDailyChallengeReplay = () => {
                         disabled={playStreakShields + qty > 3}
                         className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${playStreakShields + qty > 3 ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
                       >
-                        <span>{qty === 1 ? '1 Day' : qty === 2 ? '2 Days' : '3 Days'}</span>
-                        <span>{qty * 250} 💎</span>
+                        {qty === 1 ? '1 Day' : qty === 2 ? '2 Days' : '3 Days'}<br/>{qty * 250} 💎
                       </button>
                     ))}
                   </div>
@@ -9928,61 +9778,59 @@ const handleDailyChallengeReplay = () => {
             </div>
           </div>
           
-          {/* Dashboard Cards — Superstars + Daily Challenge side by side */}
-          <div className="w-full mb-3 grid grid-cols-2 gap-3">
-
-            {/* Superstars Card */}
+          {/* Daily Challenge Banner */}
+          {!dailyChallengeCompleted && !dailyChallengeFailed && (
             <button
-              onClick={() => {
-                setShowGemsAndRewards(true);
-                setGemsRewardsTab('superstars');
-              }}
-              className="px-4 py-5 bg-gradient-to-br from-amber-600 to-orange-700 hover:from-amber-500 hover:to-orange-600 text-white rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105 flex flex-col items-center justify-center text-center gap-2 min-h-[140px]"
+              onClick={startDailyChallenge}
+              className="w-full mb-3 px-8 py-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105"
             >
-              <span className="text-4xl">⭐</span>
-              <p className="text-lg font-bold tracking-wide leading-tight">SUPERSTARS</p>
-              <p className="text-xs text-amber-50 leading-tight">Compete weekly — see where you rank!</p>
+              <div className="flex items-center justify-center gap-3">
+                <span className="text-2xl">🏆</span>
+                <div className="text-left">
+                  <p className="text-xl font-bold">
+                    {dailyChallengeInProgress ? 'RESUME DAILY CHALLENGE' : 'DAILY CHALLENGE'}
+                  </p>
+                  <p className="text-sm text-red-100">
+                    {dailyChallengeInProgress 
+                      ? `${savedDailyChallengeState?.puzzleType?.replace('_', ' ') || 'Puzzle'} - Continue where you left off` 
+                      : 'Win 500 Gems!'}
+                  </p>
+                </div>
+              </div>
             </button>
-
-            {/* Daily Challenge Card */}
-            {!dailyChallengeCompleted && !dailyChallengeFailed && (
-              <button
-                onClick={startDailyChallenge}
-                className="px-4 py-5 bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105 flex flex-col items-center justify-center text-center gap-2 min-h-[140px]"
-              >
-                <span className="text-4xl">🏆</span>
-                <p className="text-lg font-bold leading-tight">
-                  {dailyChallengeInProgress ? 'RESUME CHALLENGE' : 'DAILY CHALLENGE'}
-                </p>
-                <p className="text-xs text-red-100 leading-tight">
-                  {dailyChallengeInProgress
-                    ? `${savedDailyChallengeState?.puzzleType?.replace('_', ' ') || 'Puzzle'} - Continue`
-                    : 'Win 500 Gems!'}
-                </p>
-              </button>
-            )}
-
-            {/* Daily Challenge Failed */}
-            {dailyChallengeFailed && !dailyChallengeCompleted && (
-              <div className="px-4 py-5 bg-gradient-to-br from-orange-600 to-orange-700 rounded-lg shadow-lg flex flex-col items-center justify-center text-center gap-2 min-h-[140px]">
-                <span className="text-4xl">💪</span>
-                <p className="text-lg font-bold text-white leading-tight">Try Again Tomorrow!</p>
-                <p className="text-xs text-orange-100 leading-tight">Resets at midnight</p>
+          )}
+          
+          {/* Daily Challenge Failed */}
+          {dailyChallengeFailed && !dailyChallengeCompleted && (
+            <div className="w-full mb-3">
+              <div className="px-8 py-4 bg-gradient-to-r from-orange-600 to-orange-700 rounded-lg shadow-lg">
+                <div className="flex items-center justify-center gap-3">
+                  <span className="text-2xl">💪</span>
+                  <div className="text-left">
+                    <p className="text-xl font-bold text-white">Try Again Tomorrow!</p>
+                    <p className="text-sm text-orange-100">Resets at midnight</p>
+                  </div>
+                </div>
               </div>
-            )}
-
-            {/* Daily Challenge Completed */}
-            {dailyChallengeCompleted && (
-              <div className="px-4 py-5 bg-gradient-to-br from-green-600 to-green-700 rounded-lg shadow-lg flex flex-col items-center justify-center text-center gap-2 min-h-[140px]">
-                <span className="text-4xl">✅</span>
-                <p className="text-lg font-bold text-white leading-tight">CHALLENGE COMPLETE!</p>
-                <p className="text-xs text-green-100 leading-tight">Come back tomorrow</p>
+            </div>
+          )}
+          
+          {/* Daily Challenge Completed - Also add reset button */}
+          {dailyChallengeCompleted && (
+            <div className="w-full mb-3">
+              <div className="px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 rounded-lg shadow-lg">
+                <div className="flex items-center justify-center gap-3">
+                  <span className="text-2xl">✅</span>
+                  <div className="text-left">
+                    <p className="text-xl font-bold text-white">DAILY CHALLENGE COMPLETE!</p>
+                    <p className="text-sm text-green-100">Come back tomorrow</p>
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
+          )}
 
-          </div>
-
-          {/* Spin Wheel Button — appears below the dashboard cards when eligible */}
+          {/* Spin Wheel Button — appears right below Daily Challenge when eligible */}
           {spinAvailable && (
             <button
               onClick={() => setShowSpinWheel(true)}
