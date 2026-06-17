@@ -3234,17 +3234,6 @@ const OneMove = () => {
     // Hide splash screen now that React has mounted
     if (window.__hideSplash) window.__hideSplash();
 
-    // Load Superstars data
-    const ssData = loadSuperstarsData();
-    if (ssData.optedIn) {
-      setSuperstarsOptedIn(true);
-      checkWeekReset();
-      const trophies = JSON.parse(localStorage.getItem('omTrophies') || '[]');
-      setWeeklyTrophies(trophies);
-      const leaderboard = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
-      setSuperstarsLeaderboard(leaderboard);
-    }
-
     // CRITICAL: Check premium unlock status FIRST before anything else
     if (localStorage.getItem('omPremiumUnlocked') === 'true') {
       setIsPremiumUnlocked(true);
@@ -3527,6 +3516,19 @@ const OneMove = () => {
     }, delay);
     return () => clearTimeout(timer);
   }, [pendingQMAdvance]);
+
+  // Load Superstars data — runs after all functions are defined
+  useEffect(() => {
+    const ssData = loadSuperstarsData();
+    if (ssData.optedIn) {
+      setSuperstarsOptedIn(true);
+      checkWeekReset();
+      const trophies = JSON.parse(localStorage.getItem('omTrophies') || '[]');
+      setWeeklyTrophies(trophies);
+      const leaderboard = JSON.parse(localStorage.getItem('omLeaderboard') || '[]');
+      setSuperstarsLeaderboard(leaderboard);
+    }
+  }, []);
 
   // Update weekly gems and leaderboard whenever gems change
   useEffect(() => {
